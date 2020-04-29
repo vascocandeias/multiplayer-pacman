@@ -19,6 +19,7 @@ typedef struct Node* ListNode;
 List put(List, Item);
 Item pop(List);
 void delete_list(List);
+ListNode get_head(List);
 Item get_data(ListNode);
 ListNode next(ListNode);
 void printlist(List);

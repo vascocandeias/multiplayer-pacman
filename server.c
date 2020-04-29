@@ -10,6 +10,7 @@
 // gcc teste.c UI_library.c -o teste-UI -lSDL2 -lSDL2_image
 
 #include "UI_library.h"
+#include "list.h"
 #include "message.h"
 
 #define PORT 3000
@@ -27,16 +28,11 @@ socklen_t size_addr;
 // this variable will contain the identifier for our own event type
 Uint32 Event_ShowUser;
 
-// change to use list -> move to server
-
-int sockets[SOCKET_LEN];
-int n_sockets = 0;
-
-void insert_socket(int fd) { sockets[n_sockets++] = fd; }
+List sockets;
 
 void send_messages(message msg) {
-  for (int i = 0; i < n_sockets; ++i) {
-    write(sockets[i], &msg, sizeof(msg));
+  for (ListNode n = get_head(sockets); n; n = next(n)) {
+    write(*(int*)get_data(n), &msg, sizeof(msg));
   }
 }
 
@@ -48,13 +44,13 @@ void* thread_user(void* arg) {
   int fd = *((int*)arg);
   SDL_Event new_event;
 
-  insert_socket(fd);
+  sockets = put(sockets, &fd);
 
   read(fd, &m, sizeof(m));
 
-  color[0] = m.color[0];
-  color[1] = m.color[1];
-  color[2] = m.color[2];
+  memcpy(color, m.color, sizeof(color));
+  printf("%d %d %d\n", m.color[0], m.color[1], m.color[2]);
+  printf("%d %d %d\n", color[0], color[1], color[2]);
 
   m.x = WIDTH;
   m.y = HEIGHT;
@@ -63,8 +59,8 @@ void* thread_user(void* arg) {
   write(fd, &m, sizeof(m));
 
   while ((err_rcv = read(fd, &m, sizeof(m))) > 0) {
-    printf("received: %d %d - %d %d %d - old - %d %d\n", getpid(), err_rcv,
-           m.character, m.x, m.y, m.old_x, m.old_y);
+    // printf("received: %d %d - %d %d %d - old - %d %d\n", getpid(), err_rcv,
+    //        m.character, m.x, m.y, m.old_x, m.old_y);
 
     if (m.x == m.old_x && m.y == m.old_y) continue;
 
@@ -162,8 +158,9 @@ int main(int argc, char* argv[]) {
       if (event.type == Event_ShowUser) {
         // we get the data (created with the malloc)
         message* data = event.user.data1;
-        printf("data: %d %d %d %d %d %d\n", data->old_x, data->old_y, data->x,
-               data->y, data->character, data->id);
+        // printf("data: %d %d %d %d %d %d\n", data->old_x, data->old_y,
+        // data->x,
+        //        data->y, data->character, data->id);
         if (data->x == data->old_x && data->y == data->old_y) printf("same\n");
         // retrieve the x and y printf("before clear\n");
         clear_place(data->old_x, data->old_y);

@@ -51,7 +51,7 @@ Item pop(List list) {
   return data;
 }
 
-// TODO: heck if necessary to free data
+// TODO: check if necessary to free data
 void delete_list(List list) {
   node next_node;
   if (!list) return;

@@ -33,8 +33,9 @@ void* thread_user(void* arg) {
   SDL_Event new_event;
 
   while ((err_rcv = read(remote_fd, &m, sizeof(m))) > 0) {
-    printf("received: %d %d - %d %d %d\n", getpid(), err_rcv, m.character, m.x,
-           m.y);
+    // printf("received: %d %d - %d %d %d\n", getpid(), err_rcv, m.character,
+    // m.x,
+    //        m.y);
 
     // create the data that will contain the new lemon position
     event_data = malloc(sizeof(message));
@@ -93,12 +94,11 @@ int main(int argc, char* argv[]) {
   printf("sending init\n");
 
   if (remote_fd) write(remote_fd, &m, sizeof(m));
-  printf("oi\n");
 
   if (read(remote_fd, &m, sizeof(m)) <= 0) {
     perror("receiving board size");
   }
-  
+
   pthread_t thread_id;
   pthread_create(&thread_id, NULL, thread_user, NULL);
 
@@ -138,7 +138,7 @@ int main(int argc, char* argv[]) {
           m.character = PACMAN;
 
           if (remote_fd) write(remote_fd, &m, sizeof(m));
-          printf("move pacman x-%d y-%d\n", m.x, m.y);
+          // printf("move pacman x-%d y-%d\n", m.x, m.y);
         }
       }
       if (event.type == SDL_KEYDOWN) {
