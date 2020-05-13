@@ -81,3 +81,20 @@ node get_head(List list) { return list ? list->head : NULL; }
 Item get_data(node node) { return node ? node->data : NULL; }
 
 node next(node node) { return node ? node->next : NULL; }
+
+// TODO: pass compare function
+int delete_node(List list, int fd) {
+  node prev = list->head;
+  printf("deleting: %d\n", fd);
+  for (node n = prev; n != NULL; n = n->next) {
+    printf("%d\n", *(int *)(n->data));
+    if (*(int *)(n->data) == fd) {
+      prev->next = n->next;
+      if (prev == n) list->head = n->next;
+      free(n);
+      return 1;
+    }
+    prev = n;
+  }
+  return 0;
+}

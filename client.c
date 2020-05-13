@@ -33,9 +33,7 @@ void* thread_user(void* arg) {
   SDL_Event new_event;
 
   while ((err_rcv = read(remote_fd, &m, sizeof(m))) > 0) {
-    // printf("received: %d %d - %d %d %d\n", getpid(), err_rcv, m.character,
-    // m.x,
-    //        m.y);
+    printf("received: %d %d - %d %d %d\n", getpid(), err_rcv, m.type, m.x, m.y);
 
     // create the data that will contain the new lemon position
     event_data = malloc(sizeof(message));
@@ -131,59 +129,67 @@ int main(int argc, char* argv[]) {
         get_board_place(event.motion.x, event.motion.y, &x_new, &y_new);
         // if the mluse moved toi anothe place
         if ((x_new != pacman[0]) || (y_new != pacman[1])) {
-          m.x = x_new;
-          m.y = y_new;
-          m.old_x = pacman[0];
-          m.old_y = pacman[1];
-          m.character = PACMAN;
+          m.x = x_new - pacman[0];
+          m.y = y_new - pacman[1];
+          // m.old_x = pacman[0];
+          // m.old_y = pacman[1];
+          m.type = PACMAN;
 
           if (remote_fd) write(remote_fd, &m, sizeof(m));
           // printf("move pacman x-%d y-%d\n", m.x, m.y);
         }
       }
       if (event.type == SDL_KEYDOWN) {
-        m.x = monster[0];
-        m.y = monster[1];
-        m.old_x = monster[0];
-        m.old_y = monster[1];
-        m.character = MONSTER;
+        m.x = 0;
+        m.y = 0;
+        m.type = MONSTER;
         switch (event.key.keysym.sym) {
           case SDLK_LEFT:
-            if (monster[0] > 0) m.x--;
+            if (monster[0] >= 0) m.x--;
             break;
           case SDLK_RIGHT:
-            if (monster[0] < width - 1) m.x++;
+            if (monster[0] < width) m.x++;
             break;
           case SDLK_UP:
-            if (monster[1] > 0) m.y--;
+            if (monster[1] >= 0) m.y--;
             break;
           case SDLK_DOWN:
-            if (monster[1] < height - 1) m.y++;
+            if (monster[1] < height) m.y++;
             break;
           default:
             break;
         }
-        if (m.x == m.old_x && m.y == m.old_y) continue;
+        if (!m.x && !m.y) continue;
         if (remote_fd) write(remote_fd, &m, sizeof(m));
-        printf("move monster x-%d y-%d\n", m.x, m.y);
+        printf("moving monster x-%d y-%d\n", m.x, m.y);
       }
       if (event.type == Event_ShowUser) {
         // we get the data (created with the malloc)
         message* data = event.user.data1;
         // retrieve the x and y
-        clear_place(data->old_x, data->old_y);
-        switch (data->character) {
+        printf("move: %d %d %d -- %d %d\n", data->type, data->old_x,
+               data->old_y, data->x, data->y);
+        if (data->old_x != -1 && data->old_y != -1)
+          clear_place(data->old_x, data->old_y);
+        switch (data->type) {
           case PACMAN:
+            printf("print pacman\n");
             paint_pacman(data->x, data->y, data->color[0], data->color[1],
                          data->color[2]);
             break;
           case MONSTER:
+            printf("print monster\n");
             paint_monster(data->x, data->y, data->color[0], data->color[1],
                           data->color[2]);
+            printf("monster printed\n");
+            break;
+          case BRICK:
+            paint_brick(data->x, data->y);
+          default:
             break;
         }
         if (data->id == id) {
-          switch (data->character) {
+          switch (data->type) {
             case PACMAN:
               pacman[0] = data->x;
               pacman[1] = data->y;
@@ -191,6 +197,8 @@ int main(int argc, char* argv[]) {
             case MONSTER:
               monster[0] = data->x;
               monster[1] = data->y;
+              break;
+            default:
               break;
           }
         }

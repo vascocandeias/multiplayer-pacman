@@ -27,7 +27,8 @@ int create_board_window(int dim_x, int dim_y) {
   n_rows = dim_y;
   screen_height = dim_y * row_height + 1;
 
-  int i, x, y;
+  // int i, x, y;
+  int i;
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
     printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
     exit(-1);

@@ -23,5 +23,6 @@ ListNode get_head(List);
 Item get_data(ListNode);
 ListNode next(ListNode);
 void printlist(List);
+int delete_node(List, int);
 
 #endif
