@@ -11,6 +11,7 @@
 // gcc teste.c UI_library.c -o teste-UI -lSDL2 -lSDL2_image
 
 #include "UI_library.h"
+#include "communication.h"
 #include "list.h"
 #include "message.h"
 
@@ -20,8 +21,6 @@
 
 int width = 30, height = 10;
 int remote_fd = 0;
-int fd;
-struct sockaddr_in local_addr;
 struct sockaddr_in remote_addr;
 socklen_t size_addr;
 
@@ -56,38 +55,8 @@ int random_position(int* pos) {
   return 1;
 }
 
-void* thread_user(void* arg) {
+void send_board(int fd) {
   message m;
-  message* event_data;
-  int color[3];
-  int err_rcv;
-  int fd = *((int*)arg);
-  SDL_Event new_event;
-  // monster and pacman position
-  int pacman[2];
-  pacman[0] = 0;
-  pacman[1] = 0;
-  int monster[2];
-  monster[0] = 0;
-  monster[1] = 0;
-  int* type;
-
-  read(fd, &m, sizeof(m));
-
-  printf("hey\n");
-
-  memcpy(color, m.color, sizeof(color));
-
-  printf("hey2\n");
-  m.x = width;
-  m.y = height;
-  m.id = fd;
-
-  printf("hey3\n");
-  write(fd, &m, sizeof(m));
-
-  printf("hey4\n");
-  sockets = put(sockets, &fd);
 
   for (int j = 0; j < width; ++j) {
     for (int i = 0; i < height; ++i) {
@@ -104,7 +73,36 @@ void* thread_user(void* arg) {
       }
     }
   }
-  printf("hey5\n");
+}
+void* thread_user(void* arg) {
+  message m;
+  message* event_data;
+  int color[3];
+  int err_rcv;
+  int fd = *(int*)arg;
+  SDL_Event new_event;
+  // monster and pacman position
+  int pacman[2];
+  pacman[0] = 0;
+  pacman[1] = 0;
+  int monster[2];
+  monster[0] = 0;
+  monster[1] = 0;
+  int* type;
+
+  read(fd, &m, sizeof(m));
+
+  memcpy(color, m.color, sizeof(color));
+
+  m.x = width;
+  m.y = height;
+  m.id = fd;
+
+  write(fd, &m, sizeof(m));
+
+  sockets = put(sockets, &fd);
+
+  send_board(fd);
 
   random_position(pacman);
   board[pacman[0]][pacman[1]].type = PACMAN;
@@ -336,6 +334,7 @@ void* thread_user(void* arg) {
 
 void* thread_accept(void* arg) {
   int remote_fd;
+  int fd = *(int*)arg;
   while (1) {
     printf("%d Ready to accept connections\n", getpid());
     remote_fd = accept(fd, (struct sockaddr*)&remote_addr, &size_addr);
@@ -367,44 +366,9 @@ void create_board(int columns, int rows) {
   }
 }
 
-int main(int argc, char* argv[]) {
-  SDL_Event event;
-  int done = 0;
-  FILE* file = NULL;
+void init_board() {
   char buffer[MAX_LEN];
-  message m;
-  Event_ShowUser = SDL_RegisterEvents(1);
-
-  srandom(time(NULL));
-
-  if (argc != 1) exit(-1);
-
-  printf("server\n");
-
-  fd = socket(AF_INET, SOCK_STREAM, 0);
-
-  if (fd == -1) {
-    perror("socket");
-    exit(-1);
-  }
-
-  local_addr.sin_family = AF_INET;
-  local_addr.sin_addr.s_addr = INADDR_ANY;
-  local_addr.sin_port = htons(PORT);
-
-  printf("port: %d\n", PORT);
-
-  if (bind(fd, (struct sockaddr*)&local_addr, sizeof(local_addr)) == -1) {
-    perror("bind");
-    exit(-1);
-  }
-
-  printf(" socket created and binded \n");
-
-  if (listen(fd, 2) == -1) {
-    perror("listen");
-    exit(-1);
-  }
+  FILE* file = NULL;
 
   if ((file = fopen(FILENAME, "r"))) {
     if (fgets(buffer, MAX_LEN, file)) {
@@ -429,15 +393,25 @@ int main(int argc, char* argv[]) {
     create_board(width, height);
     create_board_window(width, height);
   }
+}
+
+int main(int argc, char* argv[]) {
+  SDL_Event event;
+  int done = 0;
+  Event_ShowUser = SDL_RegisterEvents(1);
+
+  srandom(time(NULL));
+
+  if (argc != 1) exit(-1);
+
+  printf("server\n");
+
+  int fd = init_server(PORT);
+
+  init_board();
 
   pthread_t thread_id;
-  pthread_create(&thread_id, NULL, thread_accept, NULL);
-  // monster and packman position
-  int x = 0;
-  int y = 0;
-  int other_x = 0;
-  int other_y = 0;
-  // variable that defines what color to paint the monstes
+  pthread_create(&thread_id, NULL, thread_accept, &fd);
 
   while (!done) {
     while (SDL_PollEvent(&event)) {
@@ -454,15 +428,13 @@ int main(int argc, char* argv[]) {
         // retrieve the x and y printf("before clear\n");
         if (data->old_x != -1 && data->old_y != -1)
           clear_place(data->old_x, data->old_y);
-        other_x = data->x;
-        other_y = data->y;
         switch (data->type) {
           case PACMAN:
-            paint_pacman(other_x, other_y, data->color[0], data->color[1],
+            paint_pacman(data->x, data->y, data->color[0], data->color[1],
                          data->color[2]);
             break;
           case MONSTER:
-            paint_monster(other_x, other_y, data->color[0], data->color[1],
+            paint_monster(data->x, data->y, data->color[0], data->color[1],
                           data->color[2]);
             break;
           default:

@@ -127,7 +127,7 @@ int main(int argc, char* argv[]) {
         int x_new, y_new;
         // this fucntion return the place cwher the mouse cursor is
         get_board_place(event.motion.x, event.motion.y, &x_new, &y_new);
-        // if the mluse moved toi anothe place
+        // if the mouse moved to another place
         if ((x_new != pacman[0]) || (y_new != pacman[1])) {
           m.x = x_new - pacman[0];
           m.y = y_new - pacman[1];
@@ -181,7 +181,6 @@ int main(int argc, char* argv[]) {
             printf("print monster\n");
             paint_monster(data->x, data->y, data->color[0], data->color[1],
                           data->color[2]);
-            printf("monster printed\n");
             break;
           case BRICK:
             paint_brick(data->x, data->y);
