@@ -1,12 +1,7 @@
-typedef enum character {
-  CLEAR,
-  PACMAN,
-  MONSTER,
-  POWER,
-  BRICK,
-  LEMON,
-  CHERRY,
-} character;
+#include "board.h"
+
+#ifndef MESSAGE_H
+#define MESSAGE_H
 
 typedef struct message {
   int x, y, old_x, old_y;
@@ -14,3 +9,5 @@ typedef struct message {
   character type;
   int color[3];
 } message;
+
+#endif

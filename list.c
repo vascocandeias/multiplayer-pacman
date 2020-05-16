@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "players.h"
+
 typedef struct Node {
   Item data;
   struct Node *next;
@@ -88,7 +90,7 @@ int delete_node(List list, int fd) {
   printf("deleting: %d\n", fd);
   for (node n = prev; n != NULL; n = n->next) {
     printf("%d\n", *(int *)(n->data));
-    if (*(int *)(n->data) == fd) {
+    if (((player *)(n->data))->id == fd) {
       prev->next = n->next;
       if (prev == n) list->head = n->next;
       free(n);

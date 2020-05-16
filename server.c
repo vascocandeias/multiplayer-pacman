@@ -11,9 +11,11 @@
 // gcc teste.c UI_library.c -o teste-UI -lSDL2 -lSDL2_image
 
 #include "UI_library.h"
+#include "board.h"
 #include "communication.h"
 #include "list.h"
 #include "message.h"
+#include "players.h"
 
 #define FILENAME "board.txt"
 #define PORT 3000
@@ -24,56 +26,13 @@ int remote_fd = 0;
 struct sockaddr_in remote_addr;
 socklen_t size_addr;
 
-typedef struct place {
-  character type;
-  int id;
-  // int color[3];
-  int* color;
-} place;
-
-#define DEFAULT_PLACE \
-  { CLEAR, -1, NULL }
-
-place** board;
+gameboard board;
 
 // this variable will contain the identifier for our own event type
 Uint32 Event_ShowUser;
 
-List sockets;
+List players;
 
-void send_messages(message msg) {
-  for (ListNode n = get_head(sockets); n; n = next(n)) {
-    write(*(int*)get_data(n), &msg, sizeof(msg));
-  }
-}
-
-int random_position(int* pos) {
-  do {
-    pos[0] = random() % width;
-    pos[1] = random() % height;
-  } while (board[pos[0]][pos[1]].type);
-  return 1;
-}
-
-void send_board(int fd) {
-  message m;
-
-  for (int j = 0; j < width; ++j) {
-    for (int i = 0; i < height; ++i) {
-      if (board[j][i].type) {
-        m.id = board[j][i].id;
-        m.type = board[j][i].type;
-        m.x = j;
-        m.y = i;
-        m.old_x = m.x;
-        m.old_y = m.y;
-        if (board[j][i].color)
-          memcpy(m.color, board[j][i].color, sizeof(m.color));
-        write(fd, &m, sizeof(m));
-      }
-    }
-  }
-}
 void* thread_user(void* arg) {
   message m;
   message* event_data;
@@ -92,19 +51,26 @@ void* thread_user(void* arg) {
 
   read(fd, &m, sizeof(m));
 
-  memcpy(color, m.color, sizeof(color));
+  for (int i = 0; i < 3; ++i) {
+    if (m.color[i] > 255)
+      m.color[i] = 255;
+    else if (m.color[i] < 0)
+      m.color[i] = 0;
+
+    color[i] = m.color[i];
+  }
 
   m.x = width;
   m.y = height;
   m.id = fd;
 
   write(fd, &m, sizeof(m));
+  player p;
+  players = insert_player(players, p, fd);
 
-  sockets = put(sockets, &fd);
+  send_board(board, fd, width, height);
 
-  send_board(fd);
-
-  random_position(pacman);
+  random_position(board, pacman, width, height);
   board[pacman[0]][pacman[1]].type = PACMAN;
   board[pacman[0]][pacman[1]].id = fd;
   board[pacman[0]][pacman[1]].color = color;
@@ -134,7 +100,7 @@ void* thread_user(void* arg) {
   // send the event
   SDL_PushEvent(&new_event);
 
-  random_position(monster);
+  random_position(board, monster, width, height);
   board[monster[0]][monster[1]].type = MONSTER;
   board[monster[0]][monster[1]].id = fd;
   // memcpy(board[monster[0]][monster[1]].color, color, sizeof(color));
@@ -164,16 +130,6 @@ void* thread_user(void* arg) {
   SDL_PushEvent(&new_event);
 
   while ((err_rcv = read(fd, &m, sizeof(m))) > 0) {
-    // printf("received: %d %d - %d %d %d - old - %d %d\n", getpid(), err_rcv,
-    //        m.type, m.x, m.y, m.old_x, m.old_y);
-
-    // if (m.x == m.old_x && m.y == m.old_y) continue;
-
-    // if (m.x > 0) m.x = 1;
-    // if (m.x < 0) m.x = -1;
-    // if (m.y > 0) m.y = 1;
-    // if (m.y < 0) m.y = -1;
-
     if ((abs(m.x) + abs(m.y)) != 1) continue;
 
     switch (m.type) {
@@ -197,6 +153,8 @@ void* thread_user(void* arg) {
       m.x -= 2 * aux_x;
     if (m.y == -1 || m.y == height || board[m.x][m.y].type == BRICK)
       m.y -= 2 * aux_y;
+
+    if (m.x < 0 || m.x >= width || m.y < 0 || m.y >= height) continue;
 
     switch (board[m.x][m.y].type) {
       case BRICK:
@@ -279,7 +237,7 @@ void* thread_user(void* arg) {
   }
 
   perror("read");
-  delete_node(sockets, fd);
+  delete_node(players, fd);
   close(fd);
   board[monster[0]][monster[1]].type = CLEAR;
   board[monster[0]][monster[1]].id = -1;
@@ -348,53 +306,6 @@ void* thread_accept(void* arg) {
   }
 }
 
-void create_board(int columns, int rows) {
-  board = malloc(columns * sizeof(place*));
-  place init = DEFAULT_PLACE;
-  if (!board) {
-    perror("memory");
-    exit(-1);
-  }
-
-  for (int i = 0; i < columns; ++i) {
-    board[i] = malloc(rows * sizeof(place));
-    if (!board[i]) {
-      perror("memory");
-      exit(-1);
-    }
-    for (int j = 0; j < rows; ++j) memcpy(&board[i][j], &init, sizeof(init));
-  }
-}
-
-void init_board() {
-  char buffer[MAX_LEN];
-  FILE* file = NULL;
-
-  if ((file = fopen(FILENAME, "r"))) {
-    if (fgets(buffer, MAX_LEN, file)) {
-      int aux1, aux2;
-      if (sscanf(buffer, "%d %d", &aux1, &aux2) == 2) {
-        width = aux1;
-        height = aux2;
-        create_board(width, height);
-        create_board_window(width, height);
-        int row = 0;
-        while (fgets(buffer, MAX_LEN, file)) {
-          for (int column = 0; column < strlen(buffer); ++column)
-            if (buffer[column] == 'B') {
-              board[column][row].type = BRICK;
-              paint_brick(column, row);
-            }
-          row++;
-        }
-      }
-    }
-  } else {
-    create_board(width, height);
-    create_board_window(width, height);
-  }
-}
-
 int main(int argc, char* argv[]) {
   SDL_Event event;
   int done = 0;
@@ -408,7 +319,7 @@ int main(int argc, char* argv[]) {
 
   int fd = init_server(PORT);
 
-  init_board();
+  board = init_board(&width, &height, FILENAME);
 
   pthread_t thread_id;
   pthread_create(&thread_id, NULL, thread_accept, &fd);
@@ -440,14 +351,14 @@ int main(int argc, char* argv[]) {
           default:
             break;
         }
-        send_messages(*data);
+        send_messages(*data, players);
         free(data);
       }
     }
   }
   close(fd);
   close(remote_fd);
-
+  delete_list(players);
   printf("fim\n");
   close_board_windows();
 }

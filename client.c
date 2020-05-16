@@ -33,7 +33,7 @@ void* thread_user(void* arg) {
   SDL_Event new_event;
 
   while ((err_rcv = read(remote_fd, &m, sizeof(m))) > 0) {
-    printf("received: %d %d - %d %d %d\n", getpid(), err_rcv, m.type, m.x, m.y);
+    printf("received: %d %d - %d %d %d\n", getpid(), m.id, m.type, m.x, m.y);
 
     // create the data that will contain the new lemon position
     event_data = malloc(sizeof(message));

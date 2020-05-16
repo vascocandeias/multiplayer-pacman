@@ -1,7 +1,13 @@
+#include "communication.h"
+
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <unistd.h>
+
+#include "list.h"
+#include "message.h"
 
 int init_server(int port) {
   struct sockaddr_in local_addr;
@@ -33,3 +39,4 @@ int init_server(int port) {
 
   return fd;
 }
+
