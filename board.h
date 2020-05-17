@@ -27,18 +27,21 @@ typedef enum character {
 typedef struct place {
   character type;
   int id;
-  // int color[3];
-  int* color;
+  int color[3];
 } place;
 
-#define DEFAULT_PLACE \
-  { CLEAR, -1, NULL }
+#define BRICK_PLACE \
+  { BRICK, -1, NULL }
 
-typedef place** gameboard;
+typedef place*** gameboard;
 
 gameboard create_board(int columns, int rows);
 gameboard init_board(int* width, int* height, char* filename);
-int random_position(gameboard board, int* pos, int width, int height);
+int random_position(gameboard board, int width, int height, place* p,
+                    int position[2]);
 void send_board(gameboard board, int fd, int width, int height);
+place* get_place(gameboard board, int position[2]);
+void random_character(gameboard board, int width, int height, place* p, int id,
+                      int color[3], character c, int position[2]);
 
 #endif

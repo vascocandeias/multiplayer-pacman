@@ -33,21 +33,12 @@ Uint32 Event_ShowUser;
 
 List players;
 
-void* thread_user(void* arg) {
+void init_player(int fd, player* p, place* pac, place* mon) {
+  int color[3];
   message m;
   message* event_data;
-  int color[3];
-  int err_rcv;
-  int fd = *(int*)arg;
+  int pos[2];
   SDL_Event new_event;
-  // monster and pacman position
-  int pacman[2];
-  pacman[0] = 0;
-  pacman[1] = 0;
-  int monster[2];
-  monster[0] = 0;
-  monster[1] = 0;
-  int* type;
 
   read(fd, &m, sizeof(m));
 
@@ -65,24 +56,22 @@ void* thread_user(void* arg) {
   m.id = fd;
 
   write(fd, &m, sizeof(m));
-  player p;
   players = insert_player(players, p, fd);
+  printf("inserted %d\n", fd);
 
   send_board(board, fd, width, height);
 
-  random_position(board, pacman, width, height);
-  board[pacman[0]][pacman[1]].type = PACMAN;
-  board[pacman[0]][pacman[1]].id = fd;
-  board[pacman[0]][pacman[1]].color = color;
-  // memcpy(board[pacman[0]][pacman[1]].color, color, sizeof(color));
-
   memcpy(m.color, color, sizeof(color));
-  m.id = fd;
-  m.type = PACMAN;
-  m.x = pacman[0];
-  m.y = pacman[1];
   m.old_x = -1;
   m.old_y = -1;
+  m.id = fd;
+
+  random_character(board, width, height, pac, fd, color, PACMAN, pos);
+  set_pacman(players, fd, pos);
+
+  m.type = PACMAN;
+  m.x = pos[0];
+  m.y = pos[1];
   // create the data that will contain the new lemon position
   event_data = malloc(sizeof(message));
   if (!event_data) {
@@ -100,17 +89,14 @@ void* thread_user(void* arg) {
   // send the event
   SDL_PushEvent(&new_event);
 
-  random_position(board, monster, width, height);
-  board[monster[0]][monster[1]].type = MONSTER;
-  board[monster[0]][monster[1]].id = fd;
-  // memcpy(board[monster[0]][monster[1]].color, color, sizeof(color));
-  board[monster[0]][monster[1]].color = color;
+  random_character(board, width, height, mon, fd, color, MONSTER, pos);
+  printf("monster going to %d %d\n", pos[0], pos[1]);
+  set_monster(players, fd, pos);
+  get_monster(players, fd);
 
   m.type = MONSTER;
-  m.x = monster[0];
-  m.y = monster[1];
-  m.old_x = -1;
-  m.old_y = -1;
+  m.x = pos[0];
+  m.y = pos[1];
 
   // create the data that will contain the new lemon position
   event_data = malloc(sizeof(message));
@@ -128,16 +114,38 @@ void* thread_user(void* arg) {
   new_event.user.data1 = event_data;
   // send the event
   SDL_PushEvent(&new_event);
+  printf("init end %d\n", fd);
+  get_monster(players, fd);
+}
+
+void* thread_user(void* arg) {
+  message m;
+  message* event_data;
+  int err_rcv;
+  int fd = *(int*)arg;
+  SDL_Event new_event;
+  int* type;
+
+  player p;
+  place pac, mon;
+  init_player(fd, &p, &pac, &mon);
+
+  printf("after init %d\n", fd);
+  get_monster(players, fd);
 
   while ((err_rcv = read(fd, &m, sizeof(m))) > 0) {
     if ((abs(m.x) + abs(m.y)) != 1) continue;
 
+    place* aux;
+
     switch (m.type) {
       case PACMAN:
-        type = pacman;
+        type = get_pacman(players, fd);
+        aux = get_place(board, type);
         break;
       case MONSTER:
-        type = monster;
+        type = get_monster(players, fd);
+        aux = get_place(board, type);
       default:
         break;
     }
@@ -149,74 +157,81 @@ void* thread_user(void* arg) {
     m.x = type[0] + m.x;
     m.y = type[1] + m.y;
     if (m.x < -1 || m.x > width || m.y < -1 || m.y > height) continue;
-    if (m.x == -1 || m.x == width || board[m.x][m.y].type == BRICK)
+    if (m.x == -1 || m.x == width ||
+        (board[m.x][m.y] && board[m.x][m.y]->type == BRICK))
       m.x -= 2 * aux_x;
-    if (m.y == -1 || m.y == height || board[m.x][m.y].type == BRICK)
+    if (m.y == -1 || m.y == height ||
+        (board[m.x][m.y] && board[m.x][m.y]->type == BRICK))
       m.y -= 2 * aux_y;
 
     if (m.x < 0 || m.x >= width || m.y < 0 || m.y >= height) continue;
 
-    switch (board[m.x][m.y].type) {
-      case BRICK:
-      case PACMAN:
-        continue;
-      case MONSTER:
-        if (m.type == MONSTER || board[m.x][m.y].id == fd) {
-          message aux;
-
-          printf("move monster into monster or pacman into same monster\n");
-
-          aux.id = board[m.x][m.y].id;
-
-          aux.type = board[m.x][m.y].type;
-          aux.old_x = -1;
-          aux.old_y = -1;
-          aux.x = m.old_x;
-          aux.y = m.old_y;
-          if (aux.id == fd) {
-            monster[0] = aux.x;
-            monster[1] = aux.y;
-          }
-          m.old_x = -1;
-          m.old_y = -1;
-
-          memcpy(aux.color, board[m.x][m.y].color, sizeof(aux.color));
-
-          memcpy(&board[aux.x][aux.y], &board[m.x][m.y],
-                 sizeof(board[m.x][m.y]));
-
-          // create the data that will contain the new lemon position
-          event_data = malloc(sizeof(message));
-          if (!event_data) {
-            perror("malloc");
-            exit(-1);
-          }
-          *event_data = aux;
-
-          // clear the event data
-          SDL_zero(new_event);
-          // define event type
-          new_event.type = Event_ShowUser;
-          // assign the event data
-          new_event.user.data1 = event_data;
-          // send the event
-          SDL_PushEvent(&new_event);
-        } else
+    if (board[m.x][m.y]) {
+      switch (board[m.x][m.y]->type) {
+        case BRICK:
+        case PACMAN:
           continue;
-        break;
-      default:
-        board[type[0]][type[1]].type = CLEAR;
-        board[type[0]][type[1]].id = -1;
-        break;
-    }
+        case MONSTER:
+          if (m.type == MONSTER || board[m.x][m.y]->id == fd) {
+            message aux;
 
-    board[m.x][m.y].type = m.type;
-    // memcpy(board[m.x][m.y].color, m.color, sizeof(m.color));
-    board[m.x][m.y].color = color;
-    board[m.x][m.y].id = fd;
+            printf("move monster into monster or pacman into same monster\n");
 
+            aux.id = board[m.x][m.y]->id;
+
+            aux.type = board[m.x][m.y]->type;
+            aux.old_x = -1;
+            aux.old_y = -1;
+            aux.x = m.old_x;
+            aux.y = m.old_y;
+
+            int pos[] = {aux.x, aux.y};
+            set_monster(players, aux.id, pos);
+            m.old_x = -1;
+            m.old_y = -1;
+
+            memcpy(aux.color, board[m.x][m.y]->color, sizeof(aux.color));
+            board[aux.x][aux.y] = board[m.x][m.y];
+
+            // create the data that will contain the new lemon position
+            event_data = malloc(sizeof(message));
+            if (!event_data) {
+              perror("malloc");
+              exit(-1);
+            }
+            *event_data = aux;
+
+            // clear the event data
+            SDL_zero(new_event);
+            // define event type
+            new_event.type = Event_ShowUser;
+            // assign the event data
+            new_event.user.data1 = event_data;
+            // send the event
+            SDL_PushEvent(&new_event);
+          } else
+            continue;
+          break;
+        default:
+          board[type[0]][type[1]] = NULL;
+          break;
+      }
+    } else
+      board[type[0]][type[1]] = NULL;
+
+    board[m.x][m.y] = aux;
     type[0] = m.x;
     type[1] = m.y;
+
+    switch (m.type) {
+      case PACMAN:
+        set_pacman(players, fd, type);
+        break;
+      case MONSTER:
+        set_monster(players, fd, type);
+      default:
+        break;
+    }
 
     // create the data that will contain the new lemon position
     event_data = malloc(sizeof(message));
@@ -236,16 +251,14 @@ void* thread_user(void* arg) {
     SDL_PushEvent(&new_event);
   }
 
-  perror("read");
-  delete_node(players, fd);
+  printf("client %d disconnected\n", fd);
   close(fd);
-  board[monster[0]][monster[1]].type = CLEAR;
-  board[monster[0]][monster[1]].id = -1;
-  memset(board[monster[0]][monster[1]].color, 0, sizeof(color));
+  type = get_monster(players, fd);
+  board[type[0]][type[1]] = NULL;
 
   m.type = CLEAR;
-  m.old_x = monster[0];
-  m.old_y = monster[1];
+  m.old_x = type[0];
+  m.old_y = type[1];
   m.id = -1;
 
   event_data = malloc(sizeof(message));
@@ -264,12 +277,11 @@ void* thread_user(void* arg) {
   // send the event
   SDL_PushEvent(&new_event);
 
-  board[pacman[0]][pacman[1]].type = CLEAR;
-  board[pacman[0]][pacman[1]].id = -1;
-  memset(board[pacman[0]][pacman[1]].color, 0, sizeof(color));
+  type = get_pacman(players, fd);
+  board[type[0]][type[1]] = NULL;
 
-  m.old_x = pacman[0];
-  m.old_y = pacman[1];
+  m.old_x = type[0];
+  m.old_y = type[1];
 
   event_data = malloc(sizeof(message));
   if (!event_data) {
@@ -286,6 +298,7 @@ void* thread_user(void* arg) {
   new_event.user.data1 = event_data;
   // send the event
   SDL_PushEvent(&new_event);
+  delete_node(players, fd);
 
   return NULL;
 }
@@ -318,7 +331,6 @@ int main(int argc, char* argv[]) {
   printf("server\n");
 
   int fd = init_server(PORT);
-
   board = init_board(&width, &height, FILENAME);
 
   pthread_t thread_id;
