@@ -209,7 +209,6 @@ void paint_lemon(int board_x, int board_y, int r, int g, int b) {
 void paint_cherry(int board_x, int board_y, int r, int g, int b) {
   priv_paint_place(board_x, board_y, 255, 255, 255, cherry);
 }
-
 void paint_brick(int board_x, int board_y, int r, int g, int b) {
   priv_paint_place(board_x, board_y, 25, 255, 255, brick);
 }
@@ -220,3 +219,4 @@ void get_board_place(int mouse_x, int mouse_y, int* board_x, int* board_y) {
   *board_x = mouse_x / col_width;
   *board_y = mouse_y / row_height;
 }
+void render() { SDL_RenderPresent(renderer); }

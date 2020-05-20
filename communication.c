@@ -1,13 +1,16 @@
 #include "communication.h"
 
 #include <arpa/inet.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "fruits.h"
 #include "list.h"
 #include "message.h"
+#include "players.h"
 
 int init_server(int port) {
   struct sockaddr_in local_addr;
@@ -40,3 +43,33 @@ int init_server(int port) {
   return fd;
 }
 
+void* thread_accept(void* arg) {
+  struct sockaddr_in remote_addr;
+  socklen_t size_addr;
+  character aux[2] = {CHERRY, LEMON};
+  int n_players;
+
+  int remote_fd;
+  int fd = *(int*)arg;
+  while (1) {
+    printf("%d Ready to accept connections\n", getpid());
+    remote_fd = accept(fd, (struct sockaddr*)&remote_addr, &size_addr);
+    if (remote_fd == -1) {
+      perror("accept");
+      exit(-1);
+    }
+    printf("accepted connection\n");
+    if (!has_room()) {
+      close(remote_fd);
+      continue;
+    }
+    n_players = get_n_players();
+    pthread_t thread_id;
+    pthread_create(&thread_id, NULL, thread_user, &remote_fd);
+    if (n_players) {
+      // create fruits
+      for (int i = 0; i < 2; ++i)
+        pthread_create(&thread_id, NULL, thread_fruit, &aux[i]);
+    }
+  }
+}

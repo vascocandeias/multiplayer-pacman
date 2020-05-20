@@ -12,6 +12,7 @@
 #include "UI_library.h"
 #include "message.h"
 
+#define FORCE_RENDER
 #define PORT 3000
 
 int remote_fd = 0;
@@ -65,11 +66,11 @@ int main(int argc, char* argv[]) {
   printf("client\n");
 
   if (fd == -1) {
-    perror("socket: ");
+    perror("socket");
     exit(-1);
   }
 
-  printf(" socket created \n");
+  printf("socket created \n");
 
   remote_addr.sin_family = AF_INET;
   int port;
@@ -91,12 +92,15 @@ int main(int argc, char* argv[]) {
 
   printf("sending init\n");
 
-  if (remote_fd) write(remote_fd, &m, sizeof(m));
-
-  if (read(remote_fd, &m, sizeof(m)) <= 0) {
-    perror("receiving board size");
+  if (write(remote_fd, &m, sizeof(m)) <= 0) {
+    printf("Could not connect. Try again later\n");
+    exit(-1);
   }
 
+  if (read(remote_fd, &m, sizeof(m)) <= 0) {
+    printf("Could not connect. Try again later\n");
+    exit(-1);
+  }
   pthread_t thread_id;
   pthread_create(&thread_id, NULL, thread_user, NULL);
 
@@ -114,25 +118,25 @@ int main(int argc, char* argv[]) {
   int monster[2];
   monster[0] = 0;
   monster[1] = 0;
-  // variable that defines what color to paint the monstes
 
   while (!done) {
+#ifdef FORCE_RENDER
+    render();
+#endif
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT) {
         done = SDL_TRUE;
       }
 
-      // when the mouse mooves the monster also moves
+      // when the mouse moves the pacman also moves
       if (event.type == SDL_MOUSEMOTION) {
         int x_new, y_new;
-        // this fucntion return the place cwher the mouse cursor is
+        // this fucntion return the place where the mouse cursor is
         get_board_place(event.motion.x, event.motion.y, &x_new, &y_new);
         // if the mouse moved to another place
         if ((x_new != pacman[0]) || (y_new != pacman[1])) {
           m.x = x_new - pacman[0];
           m.y = y_new - pacman[1];
-          // m.old_x = pacman[0];
-          // m.old_y = pacman[1];
           m.type = PACMAN;
 
           if (remote_fd) write(remote_fd, &m, sizeof(m));
@@ -161,7 +165,7 @@ int main(int argc, char* argv[]) {
         }
         if (!m.x && !m.y) continue;
         if (remote_fd) write(remote_fd, &m, sizeof(m));
-        printf("moving monster x-%d y-%d\n", m.x, m.y);
+        // printf("moving monster x-%d y-%d\n", m.x, m.y);
       }
       if (event.type == Event_ShowUser) {
         // we get the data (created with the malloc)
@@ -172,23 +176,39 @@ int main(int argc, char* argv[]) {
         if (data->old_x != -1 && data->old_y != -1)
           clear_place(data->old_x, data->old_y);
         switch (data->type) {
+          case CLEAR:
+            clear_place(data->x, data->y);
+            break;
+          case POWER:
+            paint_powerpacman(data->x, data->y, data->color[0], data->color[1],
+                              data->color[2]);
+            printf("paint powered pacman!\n");
+            break;
           case PACMAN:
-            printf("print pacman\n");
             paint_pacman(data->x, data->y, data->color[0], data->color[1],
                          data->color[2]);
+            printf("paint pacman!\n");
             break;
           case MONSTER:
-            printf("print monster\n");
             paint_monster(data->x, data->y, data->color[0], data->color[1],
                           data->color[2]);
+            printf("print monster!\n");
             break;
           case BRICK:
             paint_brick(data->x, data->y);
+            break;
+          case LEMON:
+            paint_lemon(data->x, data->y);
+            break;
+          case CHERRY:
+            paint_cherry(data->x, data->y);
+            break;
           default:
             break;
         }
         if (data->id == id) {
           switch (data->type) {
+            case POWER:
             case PACMAN:
               pacman[0] = data->x;
               pacman[1] = data->y;

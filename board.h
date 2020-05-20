@@ -9,20 +9,15 @@
  *
  ****************************************************************************/
 
+#include <stdbool.h>
 #include <stdlib.h>
+
+#include "UI_library.h"
+#include "list.h"
+#include "message.h"
 
 #ifndef BOARD_H
 #define BOARD_H
-
-typedef enum character {
-  CLEAR,
-  PACMAN,
-  MONSTER,
-  POWER,
-  BRICK,
-  LEMON,
-  CHERRY,
-} character;
 
 typedef struct place {
   character type;
@@ -35,13 +30,20 @@ typedef struct place {
 
 typedef place*** gameboard;
 
-gameboard create_board(int columns, int rows);
-gameboard init_board(int* width, int* height, char* filename);
-int random_position(gameboard board, int width, int height, place* p,
-                    int position[2]);
-void send_board(gameboard board, int fd, int width, int height);
-place* get_place(gameboard board, int position[2]);
-void random_character(gameboard board, int width, int height, place* p, int id,
-                      int color[3], character c, int position[2]);
+void create_board();
+void init_board(char* filename);
+void delete_board();
+bool has_room();
+int random_position(place* p, int position[2]);
+void send_board(int fd);
+place* get_place(int position[2]);
+void random_character(place* p, int id, int color[3], character c,
+                      int position[2]);
+void handle_request(message m, int id);
+int delete_place(int position[2], int id, character c);
+int get_columns();
+int get_rows();
+void swap(place* new_place, place* old_place, int new_pos[2], int old_pos[2]);
+void draw_swap(message m, place new_place, int old_pos[2]);
 
 #endif

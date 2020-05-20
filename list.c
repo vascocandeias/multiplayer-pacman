@@ -71,7 +71,7 @@ void printlist(List list) {
   if (!list) return;
   printf("\n");
   for (node n = list->head; n != NULL; n = next_node) {
-    printf("%p: %d, ", (void *)n, n->data ? *(int *)(n->data) : -1);
+    printf("%p: %d, ", (void *)n, n->data ? (*(player *)(n->data)).id : -1);
     next_node = n->next;
   }
   printf("\n");
@@ -103,7 +103,6 @@ int delete_node(List list, int fd) {
 Item get_item(List list, int fd) {
   for (node n = list->head; n != NULL; n = n->next)
     if (((player *)(n->data))->id == fd) {
-      printf("get %d\n", ((player *)(n->data))->id);
       return n->data;
     }
 

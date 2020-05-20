@@ -1,3 +1,19 @@
 {
-	"cSpell.enabled": false
+	"cSpell.enabled": false,
+	"files.associations": {
+		"__functional_base": "c",
+		"__functional_base_03": "c",
+		"__hash_table": "c",
+		"__tuple": "c",
+		"array": "c",
+		"chrono": "c",
+		"type_traits": "c",
+		"functional": "c",
+		"limits": "c",
+		"memory": "c",
+		"ratio": "c",
+		"tuple": "c",
+		"utility": "c",
+		"iterator": "c"
+	}
 }

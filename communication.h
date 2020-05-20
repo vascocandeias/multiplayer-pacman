@@ -15,5 +15,6 @@
 #define COMMUNICATION_H
 
 int init_server(int port);
+void* thread_accept(void* arg);
 
 #endif
