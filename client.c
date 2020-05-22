@@ -12,7 +12,7 @@
 #include "UI_library.h"
 #include "message.h"
 
-#define FORCE_RENDER
+// #define FORCE_RENDER
 #define PORT 3000
 
 int remote_fd = 0;
@@ -34,7 +34,12 @@ void* thread_user(void* arg) {
   SDL_Event new_event;
 
   while ((err_rcv = read(remote_fd, &m, sizeof(m))) > 0) {
-    printf("received: %d %d - %d %d %d\n", getpid(), m.id, m.type, m.x, m.y);
+    // printf("received: %d %d - %d %d %d\n", getpid(), m.id, m.type, m.x, m.y);
+    if (m.score != -1) {
+      if (m.score == 0) printf("\nScore Board\n");
+      printf("Player %d: %d\n", m.x, m.y);
+      continue;
+    }
 
     // create the data that will contain the new lemon position
     event_data = malloc(sizeof(message));
@@ -171,8 +176,8 @@ int main(int argc, char* argv[]) {
         // we get the data (created with the malloc)
         message* data = event.user.data1;
         // retrieve the x and y
-        printf("move: %d %d %d -- %d %d\n", data->type, data->old_x,
-               data->old_y, data->x, data->y);
+        // printf("move: %d %d %d -- %d %d\n", data->type, data->old_x,
+        // data->old_y, data->x, data->y);
         if (data->old_x != -1 && data->old_y != -1)
           clear_place(data->old_x, data->old_y);
         switch (data->type) {
@@ -182,17 +187,17 @@ int main(int argc, char* argv[]) {
           case POWER:
             paint_powerpacman(data->x, data->y, data->color[0], data->color[1],
                               data->color[2]);
-            printf("paint powered pacman!\n");
+            // printf("paint powered pacman!\n");
             break;
           case PACMAN:
             paint_pacman(data->x, data->y, data->color[0], data->color[1],
                          data->color[2]);
-            printf("paint pacman!\n");
+            // printf("paint pacman!\n");
             break;
           case MONSTER:
             paint_monster(data->x, data->y, data->color[0], data->color[1],
                           data->color[2]);
-            printf("print monster!\n");
+            // printf("print monster!\n");
             break;
           case BRICK:
             paint_brick(data->x, data->y);

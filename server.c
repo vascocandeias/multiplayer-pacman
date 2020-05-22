@@ -16,7 +16,7 @@
 #include "message.h"
 #include "players.h"
 
-#define FORCE_RENDER
+// #define FORCE_RENDER
 #define FILENAME "board.txt"
 #define PORT 3000
 
@@ -38,6 +38,7 @@ int main(int argc, char* argv[]) {
     init_board(argv[1]);
   else
     init_board(FILENAME);
+
   init_players(Event_ShowUser);
   init_fruits(5);
 
@@ -58,7 +59,7 @@ int main(int argc, char* argv[]) {
 
         // if (data->x == data->old_x && data->y == data->old_y) printf("same
         // %d\n", data->y); retrieve the x and y printf("before clear\n");
-        printf("printing %d\n", data->type);
+        // printf("printing %d\n", data->type);
         if (data->old_x != -1 && data->old_y != -1)
           clear_place(data->old_x, data->old_y);
         switch (data->type) {
@@ -73,7 +74,7 @@ int main(int argc, char* argv[]) {
           case POWER:
             paint_powerpacman(data->x, data->y, data->color[0], data->color[1],
                               data->color[2]);
-            printf("print power!!!\n");
+            // printf("print power!!!\n");
             break;
           case LEMON:
             paint_lemon(data->x, data->y);
@@ -84,6 +85,7 @@ int main(int argc, char* argv[]) {
           default:
             break;
         }
+        data->score = -1;
         send_messages(*data);
         free(data);
       }

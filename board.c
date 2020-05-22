@@ -97,7 +97,6 @@ int random_position(place* p, int pos[2]) {
   pthread_mutex_lock(&mutex_board[pos[0]][pos[1]]);
   while (board[pos[0]][pos[1]]) {
     pthread_mutex_unlock(&mutex_board[pos[0]][pos[1]]);
-    printf("trying y=%d type=%d id=%d\n", pos[1], p->type, p->id);
     pos[0] = random() % columns;
     pos[1] = random() % rows;
   };
@@ -121,6 +120,7 @@ int random_position(place* p, int pos[2]) {
 void send_board(int fd) {
   message m;
   place aux;
+  m.score = -1;
 
   for (int j = 0; j < columns; ++j) {
     for (int i = 0; i < rows; ++i) {
@@ -149,6 +149,7 @@ void random_character(place* p, int id, int color[3], character c,
   memcpy(p->color, color, sizeof(int) * 3);
   p->id = id;
   p->type = c;
+  p->kill_count = 0;
 
   random_position(p, position);
 }
@@ -161,9 +162,13 @@ void handle_request(message this, int id) {
   place* new_place;
   place new;
   character aux;
+  bool eating = false;
+  int retries = 100;
 
   // printf("handle type %d x: %d y: %d\n", this.type, this.x, this.y);
 
+  // while ensures that we try again if the player moves between getting its
+  // position and locking the board place
   while (1) {
     if (this.type == PACMAN || this.type == POWER)
       memcpy(old_pos, get_pacman(id), sizeof(old_pos));
@@ -179,11 +184,18 @@ void handle_request(message this, int id) {
     new_pos[0] = old_pos[0] + aux_x;
     new_pos[1] = old_pos[1] + aux_y;
 
+    // not possible
+    if (new_pos[0] < -1 || new_pos[0] > columns || new_pos[1] < -1 ||
+        new_pos[1] > rows)
+      return;
+
     // if the player moves horizontally out of bounds
     if (new_pos[0] == -1 || new_pos[0] == columns) new_pos[0] -= 2 * aux_x;
+
     // if the player moves vertically out of bounds
     else if (new_pos[1] == -1 || new_pos[1] == rows)
       new_pos[1] -= 2 * aux_y;
+
     // if the player moves into a brick
     else {
       pthread_mutex_lock(&mutex_board[new_pos[0]][new_pos[1]]);
@@ -211,9 +223,11 @@ void handle_request(message this, int id) {
       pthread_mutex_lock(&mutex_board[old_pos[0]][old_pos[1]]);
       old_place = get_place(old_pos);
       // check if the player is still there
-      if (old_place->id != id || old_place->type % POWER != this.type % POWER) {
+      if (!old_place || old_place->id != id ||
+          old_place->type % POWER != this.type % POWER) {
         pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
-        continue;
+        if (--retries) continue;
+        return;
       }
       // lock new next
       pthread_mutex_lock(&mutex_board[new_pos[0]][new_pos[1]]);
@@ -227,71 +241,20 @@ void handle_request(message this, int id) {
       pthread_mutex_lock(&mutex_board[old_pos[0]][old_pos[1]]);
       old_place = get_place(old_pos);
       // check if the player is still there
-      if (old_place->id != id || old_place->type % POWER != this.type % POWER) {
+      if (!old_place || old_place->id != id ||
+          old_place->type % POWER != this.type % POWER) {
         pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
         pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
-        continue;
+        if (--retries) continue;
+        return;
       }
     }
 
     // ensure this.type is coherent with real type (because of powered pacmen)
     this.type = old_place->type;
 
-    if (new_place) {
-      switch (new_place->type) {
-        case BRICK:
-          break;
-        case PACMAN:
-          if (old_place->type == PACMAN || new_place->id == id) {
-            // swap
-            board[new_pos[0]][new_pos[1]] = old_place;
-            set_character(old_place->type, old_place->id, new_pos);
-            pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
-
-            board[old_pos[0]][old_pos[1]] = new_place;
-            set_character(new_place->type, new_place->id, old_pos);
-            new = *new_place;
-            pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
-
-            draw_swap(this, new, old_pos);
-            return;
-          } else
-            break;
-        case MONSTER:
-          if (old_place->type == MONSTER || new_place->id == id) {
-            // swap
-            board[new_pos[0]][new_pos[1]] = old_place;
-            set_character(old_place->type, old_place->id, new_pos);
-            pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
-
-            board[old_pos[0]][old_pos[1]] = new_place;
-            set_character(new_place->type, new_place->id, old_pos);
-            new = *new_place;
-            pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
-
-            draw_swap(this, new, old_pos);
-            return;
-          } else
-            break;
-          break;
-        case CHERRY:
-        case LEMON:
-          board[old_pos[0]][old_pos[1]] = NULL;
-          pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
-
-          if (old_place->type == PACMAN) old_place->type = POWER;
-          board[new_pos[0]][new_pos[1]] = old_place;
-          set_character(old_place->type, id, new_pos);
-          pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
-
-          if (old_place->type == POWER) this.type = POWER;
-          eat_fruit(new_place->id);
-          draw_character(this);
-        default:
-          // if it's a power pacman
-          break;
-      }
-    } else {
+    // if the place is empty
+    if (!new_place) {
       board[old_pos[0]][old_pos[1]] = NULL;
       pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
 
@@ -301,8 +264,109 @@ void handle_request(message this, int id) {
       draw_character(this);
       return;
     }
-    pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
+
+    // move into brick does nothing, as we have already delt with bounces
+    if (new_place->type == BRICK) {
+      pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
+      pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
+      return;
+    }
+
+    // pacmen, monsters or same player switch places
+    if (new_place->type % POWER == old_place->type % POWER ||
+        new_place->id == id) {
+      // swap
+      board[new_pos[0]][new_pos[1]] = old_place;
+      set_character(old_place->type, old_place->id, new_pos);
+      pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
+
+      board[old_pos[0]][old_pos[1]] = new_place;
+      set_character(new_place->type, new_place->id, old_pos);
+      new = *new_place;
+      pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
+
+      draw_swap(this, new, old_pos);
+      return;
+    }
+
+    // eat fruit
+    if (new_place->type == CHERRY || new_place->type == LEMON) {
+      board[old_pos[0]][old_pos[1]] = NULL;
+      pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
+
+      if (old_place->type == PACMAN) {
+        old_place->type = POWER;
+        this.type = POWER;
+      }
+      board[new_pos[0]][new_pos[1]] = old_place;
+      set_character(old_place->type, id, new_pos);
+      increase_score(old_place->id, old_place->type);
+      pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
+
+      // no problem with not protecting this fruit because it no longer is in
+      // the board
+      eat_fruit(new_place->id);
+      draw_character(this);
+      return;
+    }
+
+    // either powered pacman kills monster or monster kills normal pacman
+    board[old_pos[0]][old_pos[1]] = NULL;
     pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
+    if (old_place->type == POWER) {  // powered pacman into monster
+      if (++old_place->kill_count >= 2) {
+        old_place->kill_count = 0;
+        old_place->type = PACMAN;
+      }
+      eating = true;
+    } else if (new_place->type == POWER) {  // monster into powered pacman
+      if (++new_place->kill_count >= 2) {
+        new_place->kill_count = 0;
+        new_place->type = PACMAN;
+      }
+    } else if (old_place->type == MONSTER)  // monster into pacman
+      eating = true;
+
+    this.type = old_place->type;
+
+    // if the player that moved ate
+    if (eating) {
+      increase_score(old_place->id, old_place->type);
+      board[new_pos[0]][new_pos[1]] = old_place;
+      set_character(old_place->type, id, new_pos);
+      pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
+      draw_character(this);
+      // no need to protect new_place, as it is unreachable
+      new = *new_place;
+      random_position(new_place, new_pos);
+      memcpy(this.color, new.color, sizeof(this.color));
+      this.id = new.id;
+      this.old_x = -1;
+      this.old_y = -1;
+      this.type = new.type;
+      this.x = new_pos[0];
+      this.y = new_pos[1];
+      draw_character(this);
+      return;
+    }
+    increase_score(new_place->id, new_place->type);
+    new = *new_place;  // to refresh pacman
+    pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
+    memcpy(old_pos, new_pos, sizeof(new_pos));  // to refresh pacman
+    random_position(old_place, new_pos);
+    this.x = new_pos[0];
+    this.y = new_pos[1];
+    draw_character(this);
+    if (new.type != PACMAN) return;
+    // refresh powered pacman to pacman if necessary
+    this.id = new.id;
+    this.old_x = -1;
+    this.old_y = -1;
+    this.type = new.type;
+    this.x = old_pos[0];
+    this.y = old_pos[1];
+    memcpy(this.color, new.color, sizeof(new.color));
+    draw_character(this);
     return;
   }
 }

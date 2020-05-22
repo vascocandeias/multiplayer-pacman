@@ -25,7 +25,11 @@ static List players = NULL;
 static int n_players = 0;
 static Uint32 event;
 
-void init_players(Uint32 e) { event = e; }
+void init_players(Uint32 e) {
+  pthread_t thread_id;
+  event = e;
+  pthread_create(&thread_id, NULL, thread_scoreboard, NULL);
+}
 
 void send_messages(message msg) {
   for (ListNode n = get_head(players); n; n = next(n)) {
@@ -35,9 +39,11 @@ void send_messages(message msg) {
 
 void insert_player(player* p, int id) {
   p->id = id;
+  p->pacman_score = 0;
+  p->monster_score = 0;
   memset(p->monster, -1, sizeof(p->monster));
   memset(p->pacman, -1, sizeof(p->pacman));
-  printf("insert player %d\n", id);
+  // printf("insert player %d\n", id);
   players = put(players, p);
   n_players++;
 }
@@ -129,18 +135,21 @@ void delete_player(int fd) {
   m2.type = CLEAR;
   m1.id = -1;
   m2.id = -1;
+  int retries = 100;
 
   int* pos = NULL;
-  do {
+  do
     pos = get_monster(fd);
-  } while (!delete_place(pos, fd, MONSTER));
+  while (!delete_place(pos, fd, MONSTER) && retries--);
+
+  retries = 100;
 
   m1.old_x = pos[0];
   m1.old_y = pos[1];
 
-  do {
+  do
     pos = get_pacman(fd);
-  } while (!delete_place(pos, fd, PACMAN));
+  while (!delete_place(pos, fd, PACMAN) && retries--);
 
   m2.old_x = pos[0];
   m2.old_y = pos[1];
@@ -149,7 +158,10 @@ void delete_player(int fd) {
   draw_character(m1);
   draw_character(m2);
   close(fd);
-  n_players--;
+  if (--n_players == 1) {
+    ((player*)get_data(get_head(players)))->monster_score = 0;
+    ((player*)get_data(get_head(players)))->pacman_score = 0;
+  }
   delete_two_fruits();
 }
 
@@ -223,8 +235,6 @@ void* thread_user(void* arg) {
 
     times[selected][times_i[selected]++] = cur;
     times_i[selected] %= 2;
-    printf("cur time: %ld ms\n", cur);
-    printf("last time: %ld ms\n", times[selected][times_i[selected]]);
     handle_request(m, fd);
   }
 
@@ -251,19 +261,19 @@ void* thread_inactive(void* arg) {
   memcpy(m.color, p->color, sizeof(m.color));
   bool* stop = &input->stop;
   struct timespec time_to_wait = {0};
-  time_to_wait.tv_sec = time(0) + 30;
   int pos[2];
+  int retries;
   int* (*get_character)(int) = p->type == MONSTER ? get_monster : get_pacman;
-
-  printf("thread inactive\n");
 
   pthread_mutex_lock(mutex);
 
   while (1) {
+    time_to_wait.tv_sec = time(0) + 30;
     if (pthread_cond_timedwait(cond, mutex, &time_to_wait)) {
+      retries = 100;
       do
         memcpy(pos, get_character(p->id), sizeof(pos));
-      while (!delete_place(pos, p->id, p->type));
+      while (!delete_place(pos, p->id, p->type) && retries--);
       m.old_x = pos[0];
       m.old_y = pos[1];
       random_position(p, pos);
@@ -272,11 +282,35 @@ void* thread_inactive(void* arg) {
       draw_character(m);
     }
     if (*stop) break;
-    time_to_wait.tv_sec = time(0) + 30;
   }
 
   pthread_mutex_unlock(mutex);
   pthread_mutex_destroy(mutex);
   pthread_cond_destroy(cond);
   return NULL;
+}
+
+void increase_score(int id, character type) {
+  if (type % POWER == PACMAN)
+    ((player*)get_item(players, id))->pacman_score++;
+  else if (type == MONSTER)
+    ((player*)get_item(players, id))->monster_score++;
+}
+
+void* thread_scoreboard(void* arg) {
+  player* p;
+  message m;
+  while (1) {
+    m.score = 0;
+    if (n_players) printf("\nScore Board\n");
+    for (ListNode n = get_head(players); n; n = next(n)) {
+      p = (player*)get_data(n);
+      m.x = p->id;
+      m.y = p->pacman_score + p->monster_score;
+      printf("Player %d: %d\n", m.x, m.y);
+      send_messages(m);
+      m.score = 1;
+    }
+    sleep(10);
+  }
 }

@@ -23,10 +23,8 @@ typedef struct place {
   character type;
   int id;
   int color[3];
+  int kill_count;
 } place;
-
-#define BRICK_PLACE \
-  { BRICK, -1, NULL }
 
 typedef place*** gameboard;
 

@@ -16,6 +16,7 @@ typedef struct message {
   int id;
   character type;
   int color[3];
+  int score;
 } message;
 
 #endif

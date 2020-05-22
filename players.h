@@ -10,6 +10,8 @@ typedef struct player {
   int id;
   int pacman[2];
   int monster[2];
+  int pacman_score;
+  int monster_score;
 } player;
 
 void init_players(Uint32 e);
@@ -27,5 +29,7 @@ void delete_players();
 void* thread_user(void* arg);
 void* thread_inactive(void* args);
 int get_n_players();
+void* thread_scoreboard(void* arg);
+void increase_score(int id, character type);
 
 #endif

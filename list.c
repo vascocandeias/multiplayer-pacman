@@ -33,7 +33,7 @@ List put(List list, Item data) {
   }
 
   list->head = new_node(data, list->head);
-  printf("put %d\n", ((player *)data)->id);
+  // printf("put %d\n", ((player *)data)->id);
   return list;
 }
 
@@ -87,7 +87,7 @@ node next(node node) { return node ? node->next : NULL; }
 // TODO: pass compare function
 int delete_node(List list, int fd) {
   node prev = list->head;
-  printf("deleting: %d\n", fd);
+  // printf("deleting: %d\n", fd);
   for (node n = prev; n != NULL; n = n->next) {
     if (((player *)(n->data))->id == fd) {
       prev->next = n->next;
