@@ -12,103 +12,102 @@
 #include "message.h"
 #include "players.h"
 
-typedef struct fruit {
+#define FRUIT_RESPAWN_TIME 2
+
+struct fruit {
   char name[100];
   sem_t *semaphore;
   character type;
   bool stop;
-} fruit;
+};
 
-static fruit *fruits = NULL;
+static fruit **fruits = NULL;
 static int n_fruits;
 static int size;
-static pthread_mutex_t mutex;
+static pthread_rwlock_t rwlock;
 
-int create_fruit(character type) {
-  fruit f;
-  int id;
-  pthread_mutex_lock(&mutex);
-  id = n_fruits++;
-  pthread_mutex_unlock(&mutex);
-  sprintf(f.name, "/fruits%d", id);
+fruit *create_fruit(character type, int *id) {
+  fruit *f = (fruit *)malloc(sizeof(fruit));
 
-  f.type = type;
-  f.stop = false;
-  sem_unlink(f.name);
-  f.semaphore = sem_open(f.name, O_CREAT | O_EXCL, S_IRWXU, 0);
-  if (f.semaphore == SEM_FAILED) {
+  f->type = type;
+  f->stop = false;
+
+  pthread_rwlock_wrlock(&rwlock);
+  *id = n_fruits++;
+  fruits[*id] = f;
+  sprintf(f->name, "/fruits%d", *id);
+  sem_unlink(f->name);
+  f->semaphore = sem_open(f->name, O_CREAT | O_EXCL, S_IRWXU, 0);
+  pthread_rwlock_unlock(&rwlock);
+  if (f->semaphore == SEM_FAILED) {
     perror("semaphore");
     exit(-1);
   }
-  fruits[id] = f;
-  return id;
+  return f;
 }
 
 void init_fruits(int sz) {
   size = sz;
-  fruits = (fruit *)malloc(size * sizeof(fruit));
+  fruits = (fruit **)calloc(size, sizeof(fruit *));
   if (!fruits) {
     perror("memory");
     exit(-1);
   }
   n_fruits = 0;
-  pthread_mutex_init(&mutex, NULL);
+  pthread_rwlock_init(&rwlock, NULL);
 }
 
 void delete_fruits() {
   for (int i = 0; i < n_fruits; ++i) {
-    fruits[i].stop = true;
-    sem_post(fruits[i].semaphore);
-    // TODO: join threads
+    fruits[i]->stop = true;
+    sem_post(fruits[i]->semaphore);
   }
   free(fruits);
-  pthread_mutex_destroy(&mutex);
 }
 
-void eat_fruit(int id) { sem_post(fruits[id].semaphore); }
+void eat_fruit(int id) {
+  pthread_rwlock_rdlock(&rwlock);
+  if (fruits[id]) sem_post(fruits[id]->semaphore);
+  pthread_rwlock_unlock(&rwlock);
+}
 
 void delete_two_fruits() {
   if (!n_fruits) return;
-  pthread_mutex_lock(&mutex);
-  fruits[--n_fruits].stop = true;
-  sem_post(fruits[n_fruits].semaphore);
-  fruits[--n_fruits].stop = true;
-  sem_post(fruits[n_fruits].semaphore);
-  pthread_mutex_unlock(&mutex);
+  pthread_rwlock_wrlock(&rwlock);
+  fruits[--n_fruits]->stop = true;
+  sem_post(fruits[n_fruits]->semaphore);
+  fruits[n_fruits] = NULL;
+  fruits[--n_fruits]->stop = true;
+  sem_post(fruits[n_fruits]->semaphore);
+  fruits[n_fruits] = NULL;
+  pthread_rwlock_unlock(&rwlock);
 }
 
 void *thread_fruit(void *arg) {
   character type = *(character *)arg;
-  int id = create_fruit(type);
-  place p = {type, id, {0, 0, 0}};
+  int id;
+  fruit *this = create_fruit(type, &id);
+  place p = {type, id, {0, 0, 0}, -1};
   int pos[2];
-  fruit *this = &fruits[id];
-  message m = {-1, -1, -1, -1, id, type, {0, 0}};
+  message m = {-1, -1, id, type, {0, 0}, -1};
 
   while (!this->stop) {
     random_position(&p, pos);
     m.x = pos[0];
     m.y = pos[1];
-    m.old_x = -1;
-    m.old_y = -1;
     draw_character(m);
     if (sem_wait(this->semaphore) == -1) {
       perror("semaphore wait");
       break;
     }
     if (this->stop) break;
-    sleep(2);
+    sleep(FRUIT_RESPAWN_TIME);
   }
-  if (delete_place(pos, id, type)) {
-    m.old_x = pos[0];
-    m.old_y = pos[1];
-    m.type = CLEAR;
-    draw_character(m);
-  }
-  pthread_mutex_lock(&mutex);
+  if (delete_place(pos, id, type)) clear_position(pos);
   sem_close(this->semaphore);
   this->semaphore = NULL;
   sem_unlink(this->name);
-  pthread_mutex_unlock(&mutex);
+  free(this);
+  printf("fruit deleted\n");
   return NULL;
 }

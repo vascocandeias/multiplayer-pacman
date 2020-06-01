@@ -1,6 +1,7 @@
 #include "communication.h"
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,7 +9,6 @@
 #include <unistd.h>
 
 #include "fruits.h"
-#include "list.h"
 #include "message.h"
 #include "players.h"
 
@@ -55,6 +55,7 @@ void* thread_accept(void* arg) {
     printf("%d Ready to accept connections\n", getpid());
     remote_fd = accept(fd, (struct sockaddr*)&remote_addr, &size_addr);
     if (remote_fd == -1) {
+      if (errno == ECONNABORTED) return NULL;
       perror("accept");
       exit(-1);
     }
@@ -68,7 +69,7 @@ void* thread_accept(void* arg) {
     pthread_create(&thread_id, NULL, thread_user, &remote_fd);
     if (n_players) {
       // create fruits
-      for (int i = 0; i < 2; ++i)
+      for (int i = 0; i < sizeof(aux) / sizeof(character); ++i)
         pthread_create(&thread_id, NULL, thread_fruit, &aux[i]);
     }
   }

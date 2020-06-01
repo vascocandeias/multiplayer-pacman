@@ -12,7 +12,7 @@ typedef enum character {
 } character;
 
 typedef struct message {
-  int x, y, old_x, old_y;
+  int x, y;
   int id;
   character type;
   int color[3];

@@ -1,6 +1,5 @@
 #include "UI_library.h"
 #include "board.h"
-#include "list.h"
 #include "message.h"
 
 #ifndef PLAYERS_H
@@ -14,8 +13,8 @@ typedef struct player {
   int monster_score;
 } player;
 
-void init_players(Uint32 e);
-void insert_player(player* p, int id);
+void init_players(int max_players, Uint32 e);
+int insert_player(int id);
 void send_messages(message msg);
 int* get_monster(int id);
 int* get_pacman(int id);
@@ -23,7 +22,7 @@ void set_monster(int id, int* position);
 void set_pacman(int id, int* position);
 void set_character(character c, int id, int pos[2]);
 void draw_character(message m);
-void init_player(int fd, player* p, place* pac, place* mon);
+int init_player(int fd, place* pac, place* mon);
 void delete_player(int fd);
 void delete_players();
 void* thread_user(void* arg);

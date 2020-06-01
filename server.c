@@ -12,13 +12,24 @@
 #include "board.h"
 #include "communication.h"
 #include "fruits.h"
-#include "list.h"
 #include "message.h"
 #include "players.h"
 
 // #define FORCE_RENDER
 #define FILENAME "board.txt"
 #define PORT 3000
+
+int fd;
+
+// Signal handling
+// TODO: close sockets and remove semaphores
+void terminate(int signal) {
+  printf("\nExiting due to signal\n");
+  close(fd);
+  delete_fruits();
+  close_board_windows();
+  exit(0);
+}
 
 int main(int argc, char* argv[]) {
   SDL_Event event;
@@ -33,14 +44,23 @@ int main(int argc, char* argv[]) {
 
   printf("server\n");
 
-  int fd = init_server(PORT);
-  if (argc == 2)
-    init_board(argv[1]);
-  else
-    init_board(FILENAME);
+  fd = init_server(PORT);
 
-  init_players(Event_ShowUser);
-  init_fruits(5);
+  if (signal(SIGINT, terminate) == SIG_ERR ||
+      signal(SIGPIPE, SIG_IGN) == SIG_ERR)
+    perror("signal handlers");
+
+  int free_places;
+  if (argc == 2)
+    free_places = init_board(argv[1]);
+  else
+    free_places = init_board(FILENAME);
+
+  int max_players = (free_places + 2) / 4;
+  int max_fruits = (max_players - 1) * 2;
+
+  init_players(max_players, Event_ShowUser);
+  init_fruits(max_fruits);
 
   pthread_t thread_id;
   pthread_create(&thread_id, NULL, thread_accept, &fd);
@@ -57,12 +77,10 @@ int main(int argc, char* argv[]) {
         // we get the data (created with the malloc)
         message* data = event.user.data1;
 
-        // if (data->x == data->old_x && data->y == data->old_y) printf("same
-        // %d\n", data->y); retrieve the x and y printf("before clear\n");
-        // printf("printing %d\n", data->type);
-        if (data->old_x != -1 && data->old_y != -1)
-          clear_place(data->old_x, data->old_y);
         switch (data->type) {
+          case CLEAR:
+            clear_place(data->x, data->y);
+            break;
           case PACMAN:
             paint_pacman(data->x, data->y, data->color[0], data->color[1],
                          data->color[2]);
@@ -74,7 +92,6 @@ int main(int argc, char* argv[]) {
           case POWER:
             paint_powerpacman(data->x, data->y, data->color[0], data->color[1],
                               data->color[2]);
-            // printf("print power!!!\n");
             break;
           case LEMON:
             paint_lemon(data->x, data->y);
@@ -85,8 +102,6 @@ int main(int argc, char* argv[]) {
           default:
             break;
         }
-        data->score = -1;
-        send_messages(*data);
         free(data);
       }
     }
@@ -96,4 +111,5 @@ int main(int argc, char* argv[]) {
   delete_fruits();
   delete_board();
   close_board_windows();
+  printf("end\n");
 }

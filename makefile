@@ -1,8 +1,8 @@
 CC = gcc																			# compilador a usar
-# CFLAGS = -g -Wall -O3 -pedantic													# opções de compilação
-CFLAGS = -g -Wall -pedantic															# opções de compilação
+CFLAGS = -Wall -O3 -pedantic													# opções de compilação
+# CFLAGS = -g -Wall -pedantic															# opções de compilação
 LFLAGS = -lSDL2 -lSDL2_image -lpthread												# opções de linkagem
-OBJS = server.c list.o UI_library.o communication.o board.o players.o fruits.o		# ficheiros objecto
+OBJS = server.c  UI_library.o communication.o board.o players.o fruits.o		# ficheiros objecto
 EXEC = server																		# nome do executável
 
 server: $(OBJS)
@@ -14,8 +14,8 @@ client: client.c UI_library.o
 board.o: board.c board.h
 	@$(CC) $(CFLAGS) -c board.c
 
-list.o: list.c list.h
-	@$(CC) $(CFLAGS) -c list.c
+# list.o: list.c list.h
+# 	@$(CC) $(CFLAGS) -c list.c
 
 fruits.o: fruits.c fruits.h
 	@$(CC) $(CFLAGS) -c fruits.c

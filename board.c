@@ -7,7 +7,6 @@
 
 #include "UI_library.h"
 #include "fruits.h"
-#include "list.h"
 #include "message.h"
 #include "players.h"
 #include "pthread.h"
@@ -43,7 +42,7 @@ void create_board() {
   }
 }
 
-void init_board(char* filename) {
+int init_board(char* filename) {
   char buffer[MAX_LEN];
   FILE* file = NULL;
   brick = malloc(sizeof(place*));
@@ -76,6 +75,7 @@ void init_board(char* filename) {
     create_board();
     create_board_window(columns, rows);
   }
+  return free_places;
 }
 
 bool has_room() { return free_places >= 4 * get_n_players() + 2; }
@@ -93,6 +93,8 @@ void delete_board() {
 int random_position(place* p, int pos[2]) {
   pos[0] = random() % columns;
   pos[1] = random() % rows;
+
+  printf("random position %d %d\n", p->id, p->type);
 
   pthread_mutex_lock(&mutex_board[pos[0]][pos[1]]);
   while (board[pos[0]][pos[1]]) {
@@ -117,7 +119,7 @@ int random_position(place* p, int pos[2]) {
   return 1;
 }
 
-void send_board(int fd) {
+int send_board(int fd) {
   message m;
   place aux;
   m.score = -1;
@@ -132,14 +134,16 @@ void send_board(int fd) {
         m.type = aux.type;
         m.x = j;
         m.y = i;
-        m.old_x = m.x;
-        m.old_y = m.y;
         memcpy(m.color, aux.color, sizeof(m.color));
-        write(fd, &m, sizeof(m));
+        if (write(fd, &m, sizeof(m)) <= 0) {
+          perror("send board");
+          return -1;
+        };
       } else
         pthread_mutex_unlock(&mutex_board[j][i]);
     }
   }
+  return 1;
 }
 
 place* get_place(int position[2]) { return board[position[0]][position[1]]; }
@@ -150,6 +154,8 @@ void random_character(place* p, int id, int color[3], character c,
   p->id = id;
   p->type = c;
   p->kill_count = 0;
+
+  printf("random character\n");
 
   random_position(p, position);
 }
@@ -177,8 +183,10 @@ void handle_request(message this, int id) {
     else  // not possible
       return;
 
-    this.old_x = old_pos[0];
-    this.old_y = old_pos[1];
+    if (old_pos[0] == -1 || old_pos[1] == -1) {
+      if (retries--) continue;
+      return;
+    }
     aux_x = this.x;
     aux_y = this.y;
     new_pos[0] = old_pos[0] + aux_x;
@@ -261,6 +269,7 @@ void handle_request(message this, int id) {
       board[new_pos[0]][new_pos[1]] = old_place;
       set_character(this.type, id, new_pos);
       pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
+      clear_position(old_pos);
       draw_character(this);
       return;
     }
@@ -273,8 +282,9 @@ void handle_request(message this, int id) {
     }
 
     // pacmen, monsters or same player switch places
+    // only fruits have negative kill_count
     if (new_place->type % POWER == old_place->type % POWER ||
-        new_place->id == id) {
+        (new_place->kill_count != -1 && new_place->id == id)) {
       // swap
       board[new_pos[0]][new_pos[1]] = old_place;
       set_character(old_place->type, old_place->id, new_pos);
@@ -289,11 +299,12 @@ void handle_request(message this, int id) {
       return;
     }
 
+    // from here on out, the old position will always be cleared
+    board[old_pos[0]][old_pos[1]] = NULL;
+    pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
+
     // eat fruit
     if (new_place->type == CHERRY || new_place->type == LEMON) {
-      board[old_pos[0]][old_pos[1]] = NULL;
-      pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
-
       if (old_place->type == PACMAN) {
         old_place->type = POWER;
         this.type = POWER;
@@ -306,13 +317,12 @@ void handle_request(message this, int id) {
       // no problem with not protecting this fruit because it no longer is in
       // the board
       eat_fruit(new_place->id);
+      clear_position(old_pos);
       draw_character(this);
       return;
     }
 
     // either powered pacman kills monster or monster kills normal pacman
-    board[old_pos[0]][old_pos[1]] = NULL;
-    pthread_mutex_unlock(&mutex_board[old_pos[0]][old_pos[1]]);
     if (old_place->type == POWER) {  // powered pacman into monster
       if (++old_place->kill_count >= 2) {
         old_place->kill_count = 0;
@@ -335,14 +345,13 @@ void handle_request(message this, int id) {
       board[new_pos[0]][new_pos[1]] = old_place;
       set_character(old_place->type, id, new_pos);
       pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
+      clear_position(old_pos);
       draw_character(this);
       // no need to protect new_place, as it is unreachable
       new = *new_place;
       random_position(new_place, new_pos);
       memcpy(this.color, new.color, sizeof(this.color));
       this.id = new.id;
-      this.old_x = -1;
-      this.old_y = -1;
       this.type = new.type;
       this.x = new_pos[0];
       this.y = new_pos[1];
@@ -350,9 +359,10 @@ void handle_request(message this, int id) {
       return;
     }
     increase_score(new_place->id, new_place->type);
-    new = *new_place;  // to refresh pacman
+    new = *new_place;  // to refresh pacman later
     pthread_mutex_unlock(&mutex_board[new_pos[0]][new_pos[1]]);
-    memcpy(old_pos, new_pos, sizeof(new_pos));  // to refresh pacman
+    clear_position(old_pos);
+    memcpy(old_pos, new_pos, sizeof(new_pos));  // to refresh pacman later
     random_position(old_place, new_pos);
     this.x = new_pos[0];
     this.y = new_pos[1];
@@ -360,8 +370,6 @@ void handle_request(message this, int id) {
     if (new.type != PACMAN) return;
     // refresh powered pacman to pacman if necessary
     this.id = new.id;
-    this.old_x = -1;
-    this.old_y = -1;
     this.type = new.type;
     this.x = old_pos[0];
     this.y = old_pos[1];
@@ -373,6 +381,9 @@ void handle_request(message this, int id) {
 
 int delete_place(int position[2], int id, character c) {
   place* p = NULL;
+  if (position[0] < 0 || position[0] >= columns || position[1] < 0 ||
+      position[1] >= rows)
+    return 0;
   pthread_mutex_lock(&mutex_board[position[0]][position[1]]);
   p = board[position[0]][position[1]];
   if (!p || p->id != id || p->type % POWER != c % POWER) {
@@ -399,15 +410,20 @@ void draw_swap(message m, place new_place, int old_pos[2]) {
   message other;
   other.id = new_place.id;
   other.type = new_place.type;
-  other.old_x = -1;
-  other.old_y = -1;
   other.x = old_pos[0];
   other.y = old_pos[1];
   memcpy(other.color, new_place.color, sizeof(other.color));
 
-  m.old_x = -1;
-  m.old_y = -1;
-
   draw_character(other);
+  draw_character(m);
+}
+
+/*
+ * description: clears a baord porition
+ *
+ * arguments: pos - position in the board [x, y]
+ */
+void clear_position(int pos[2]) {
+  message m = {pos[0], pos[1], -1, CLEAR, {-1, -1, -1}, -1};
   draw_character(m);
 }

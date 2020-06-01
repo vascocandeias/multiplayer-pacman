@@ -2,6 +2,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -27,13 +28,17 @@ int height = 20;
 // this variable will contain the identifier for our own event type
 Uint32 Event_ShowUser;
 
+void terminate(int signal) {
+  printf("\nExiting due to signal\n");
+  exit(0);
+}
+
 void* thread_user(void* arg) {
   message m;
   message* event_data;
-  int err_rcv;
   SDL_Event new_event;
 
-  while ((err_rcv = read(remote_fd, &m, sizeof(m))) > 0) {
+  while (read(remote_fd, &m, sizeof(m)) > 0) {
     // printf("received: %d %d - %d %d %d\n", getpid(), m.id, m.type, m.x, m.y);
     if (m.score != -1) {
       if (m.score == 0) printf("\nScore Board\n");
@@ -77,6 +82,10 @@ int main(int argc, char* argv[]) {
 
   printf("socket created \n");
 
+  if (signal(SIGINT, terminate) == SIG_ERR ||
+      signal(SIGPIPE, SIG_IGN) == SIG_ERR)
+    perror("signal handlers");
+
   remote_addr.sin_family = AF_INET;
   int port;
   sscanf(argv[2], "%d", &port);
@@ -88,8 +97,6 @@ int main(int argc, char* argv[]) {
     perror("connect");
     exit(-1);
   }
-
-  printf("connected\n");
 
   sscanf(argv[3], "%d", &m.color[0]);
   sscanf(argv[4], "%d", &m.color[1]);
@@ -112,7 +119,7 @@ int main(int argc, char* argv[]) {
   width = m.x;
   height = m.y;
   id = m.id;
-
+  printf("Player %d\n", id);
   // creates a windows and a board with 50x20 cases
   create_board_window(width, height);
 
@@ -144,8 +151,7 @@ int main(int argc, char* argv[]) {
           m.y = y_new - pacman[1];
           m.type = PACMAN;
 
-          if (remote_fd) write(remote_fd, &m, sizeof(m));
-          // printf("move pacman x-%d y-%d\n", m.x, m.y);
+          if (write(remote_fd, &m, sizeof(m)) <= 0) done = SDL_TRUE;
         }
       }
       if (event.type == SDL_KEYDOWN) {
@@ -176,10 +182,7 @@ int main(int argc, char* argv[]) {
         // we get the data (created with the malloc)
         message* data = event.user.data1;
         // retrieve the x and y
-        // printf("move: %d %d %d -- %d %d\n", data->type, data->old_x,
-        // data->old_y, data->x, data->y);
-        if (data->old_x != -1 && data->old_y != -1)
-          clear_place(data->old_x, data->old_y);
+        // printf("move: %d -- %d %d\n", data->type, data->x, data->y);
         switch (data->type) {
           case CLEAR:
             clear_place(data->x, data->y);

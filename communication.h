@@ -8,9 +8,6 @@
  *  Description: Headers file for the communication.c functions
  *
  ****************************************************************************/
-#include "list.h"
-#include "message.h"
-
 #ifndef COMMUNICATION_H
 #define COMMUNICATION_H
 
