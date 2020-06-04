@@ -1,3 +1,13 @@
+/*****************************************************************************
+ * File name: player.c
+ *
+ *  Author: Vasco Candeias (vascocandeias@tecnico.ulisboa.pt)
+ *
+ *  Release date: 01/06/2020
+ *
+ *  Description: Player module
+ *
+ ****************************************************************************/
 #include "players.h"
 
 #include <SDL2/SDL.h>
@@ -23,6 +33,14 @@ typedef struct conditional {
   bool stop;
 } conditional;
 
+struct player {
+  int id;
+  int pacman[2];
+  int monster[2];
+  int pacman_score;
+  int monster_score;
+};
+
 static player* players = NULL;
 static int n_players = 0;
 static int max = 0;
@@ -38,6 +56,7 @@ void init_players(int max_players, Uint32 e) {
     perror("malloc");
     exit(-1);
   }
+  pthread_rwlock_init(&rwlock, NULL);
   for (int i = 0; i < max; ++i) players[i].id = -1;
   pthread_create(&thread_id, NULL, thread_scoreboard, NULL);
 }
@@ -47,15 +66,15 @@ void send_messages(message msg) {
   for (int i = 0; i < max && n < n_players; ++i)
     if (players[i].id != -1) {
       if (write(players[i].id, &msg, sizeof(msg)) == -1) {
-        perror("send messages");
+        // perror("send messages");
         continue;
       }
       ++n;
     };
 }
 
-int insert_player(int id) {
-  player p = {id, {-1, -1}, {-1, -1}, 0, 0};
+int insert_player(int fd) {
+  player p = {fd, {-1, -1}, {-1, -1}, 0, 0};
   int n = 0, i = 0;
   // lock to secure multiple threads creating players concurrently
   pthread_rwlock_wrlock(&rwlock);
@@ -67,15 +86,17 @@ int insert_player(int id) {
   return i;
 }
 
-int* get_pacman(int id) { return players[id].pacman; }
+int* get_monster(int id) { return id < n_players ? players[id].monster : NULL; }
 
-int* get_monster(int id) { return players[id].monster; }
+int* get_pacman(int id) { return id < n_players ? players[id].pacman : NULL; }
 
 void set_monster(int id, int* position) {
+  if (id >= n_players) return;
   memcpy(players[id].monster, position, sizeof(players[id].monster));
 }
 
 void set_pacman(int id, int* position) {
+  if (id >= n_players) return;
   memcpy(players[id].pacman, position, sizeof(players[id].pacman));
 }
 
@@ -102,11 +123,15 @@ int init_player(int fd, place* pac, place* mon) {
   m.x = get_columns();
   m.y = get_rows();
   m.id = id;
+  m.score = -2;
 
   if (write(fd, &m, sizeof(m)) <= 0 || send_board(fd) == -1) {
-    perror("write in insertion\n");
+    perror("write in insertion");
+    pthread_rwlock_wrlock(&rwlock);
+    close(fd);
     players[id].id = -1;
     n_players--;
+    pthread_rwlock_unlock(&rwlock);
     return -1;
   }
 
@@ -152,26 +177,25 @@ void draw_character(message m) {
 
 void delete_player(int id) {
   int retries = 100;
-
   int* pos = NULL;
+
   do
     pos = get_monster(id);
   while (!delete_place(pos, id, MONSTER) && retries--);
 
   retries = 100;
-  clear_position(pos);
+  if (pos) clear_position(pos);
 
   do
     pos = get_pacman(id);
   while (!delete_place(pos, id, PACMAN) && retries--);
 
-  clear_position(pos);
+  if (pos) clear_position(pos);
   delete_two_fruits();
   pthread_rwlock_wrlock(&rwlock);
-  int fd = players[id].id;
+  if (players[id].id != -1) close(players[id].id);
   players[id].id = -1;
   n_players--;
-  close(fd);
   for (int i = 0; i < max && n_players == 1; ++i)
     if (players[i].id != -1) {
       players[i].pacman_score = 0;
@@ -184,7 +208,6 @@ void delete_player(int id) {
 int get_n_players() { return n_players; }
 
 void set_character(character c, int id, int pos[2]) {
-  // player* aux = (player*)get_item(players, id);
   player* aux = &players[id];
   if (c == PACMAN || c == POWER)
     memcpy(aux->pacman, pos, sizeof(int) * 2);
@@ -192,7 +215,16 @@ void set_character(character c, int id, int pos[2]) {
     memcpy(aux->monster, pos, sizeof(int) * 2);
 }
 
-void delete_players() { free(players); }
+void delete_players() {
+  int n = 0;
+  pthread_rwlock_wrlock(&rwlock);
+  for (int i = 0; i < max && n < n_players; ++i)
+    if (players[i].id != -1) {
+      close(players[i].id);
+      players[i].id = -1;
+    }
+  pthread_rwlock_unlock(&rwlock);
+}
 
 unsigned long get_time() {
   struct timespec t;
@@ -215,7 +247,10 @@ void* thread_user(void* arg) {
   place pac, mon;
   int id = init_player(fd, &pac, &mon);
 
-  if (id == -1) return NULL;
+  if (id == -1) {
+    delete_two_fruits();
+    return NULL;
+  }
 
   // inactivity
   conditional inactive_m = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER,
@@ -253,7 +288,6 @@ void* thread_user(void* arg) {
     handle_request(m, id);
   }
 
-  printf("player %d disconnected\n", id);
   for (int i = 0; i < 2; ++i) {
     pthread_mutex_lock(&inactives[i].mutex);
     inactives[i].stop = true;
@@ -263,7 +297,6 @@ void* thread_user(void* arg) {
   }
 
   delete_player(id);
-  printf("deleted: %d\n", n_players);
 
   return NULL;
 }
@@ -302,6 +335,7 @@ void* thread_inactive(void* arg) {
   pthread_mutex_unlock(mutex);
   pthread_mutex_destroy(mutex);
   pthread_cond_destroy(cond);
+  printf("innactive thread stopped\n");
   return NULL;
 }
 

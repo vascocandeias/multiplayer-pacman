@@ -1,3 +1,13 @@
+/*****************************************************************************
+ * File name: communication.c
+ *
+ *  Author: Vasco Candeias (vascocandeias@tecnico.ulisboa.pt)
+ *
+ *  Release date: 01/06/2020
+ *
+ *  Description: Communication module
+ *
+ ****************************************************************************/
 #include "communication.h"
 
 #include <arpa/inet.h>
@@ -52,7 +62,6 @@ void* thread_accept(void* arg) {
   int remote_fd;
   int fd = *(int*)arg;
   while (1) {
-    printf("%d Ready to accept connections\n", getpid());
     remote_fd = accept(fd, (struct sockaddr*)&remote_addr, &size_addr);
     if (remote_fd == -1) {
       if (errno == ECONNABORTED) return NULL;

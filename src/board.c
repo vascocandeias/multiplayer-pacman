@@ -1,3 +1,13 @@
+/*****************************************************************************
+ * File name: board.c
+ *
+ *  Author: Vasco Candeias (vascocandeias@tecnico.ulisboa.pt)
+ *
+ *  Release date: 01/06/2020
+ *
+ *  Description: Board module
+ *
+ ****************************************************************************/
 #include "board.h"
 
 #include <stdbool.h>
@@ -13,14 +23,14 @@
 
 #define MAX_LEN 128
 
-static gameboard board;
+static place*** board;
 static place* brick;
 static int columns = 30, rows = 10;
 static int free_places = 0;
 static pthread_mutex_t** mutex_board;
 
 void create_board() {
-  board = (gameboard)malloc(columns * sizeof(place**));
+  board = (place***)malloc(columns * sizeof(place**));
   mutex_board = (pthread_mutex_t**)malloc(columns * sizeof(pthread_mutex_t*));
 
   if (!board || !mutex_board) {
@@ -90,18 +100,17 @@ void delete_board() {
   free(brick);
 }
 
-int random_position(place* p, int pos[2]) {
+void random_position(place* p, int pos[2]) {
   pos[0] = random() % columns;
   pos[1] = random() % rows;
-
-  printf("random position %d %d\n", p->id, p->type);
 
   pthread_mutex_lock(&mutex_board[pos[0]][pos[1]]);
   while (board[pos[0]][pos[1]]) {
     pthread_mutex_unlock(&mutex_board[pos[0]][pos[1]]);
     pos[0] = random() % columns;
     pos[1] = random() % rows;
-  };
+    pthread_mutex_lock(&mutex_board[pos[0]][pos[1]]);
+  }
   board[pos[0]][pos[1]] = p;
   switch (p->type) {
     case MONSTER:
@@ -115,8 +124,6 @@ int random_position(place* p, int pos[2]) {
       break;
   }
   pthread_mutex_unlock(&mutex_board[pos[0]][pos[1]]);
-
-  return 1;
 }
 
 int send_board(int fd) {
@@ -138,7 +145,7 @@ int send_board(int fd) {
         if (write(fd, &m, sizeof(m)) <= 0) {
           perror("send board");
           return -1;
-        };
+        }
       } else
         pthread_mutex_unlock(&mutex_board[j][i]);
     }
@@ -155,8 +162,6 @@ void random_character(place* p, int id, int color[3], character c,
   p->type = c;
   p->kill_count = 0;
 
-  printf("random character\n");
-
   random_position(p, position);
 }
 
@@ -170,8 +175,6 @@ void handle_request(message this, int id) {
   character aux;
   bool eating = false;
   int retries = 100;
-
-  // printf("handle type %d x: %d y: %d\n", this.type, this.x, this.y);
 
   // while ensures that we try again if the player moves between getting its
   // position and locking the board place
@@ -379,32 +382,25 @@ void handle_request(message this, int id) {
   }
 }
 
-int delete_place(int position[2], int id, character c) {
+bool delete_place(int position[2], int id, character c) {
   place* p = NULL;
-  if (position[0] < 0 || position[0] >= columns || position[1] < 0 ||
-      position[1] >= rows)
-    return 0;
+  if (!position || position[0] < 0 || position[0] >= columns ||
+      position[1] < 0 || position[1] >= rows)
+    return false;
   pthread_mutex_lock(&mutex_board[position[0]][position[1]]);
   p = board[position[0]][position[1]];
   if (!p || p->id != id || p->type % POWER != c % POWER) {
     pthread_mutex_unlock(&mutex_board[position[0]][position[1]]);
-    return 0;
+    return false;
   }
   board[position[0]][position[1]] = NULL;
   pthread_mutex_unlock(&mutex_board[position[0]][position[1]]);
-  return 1;
+  return true;
 }
 
 int get_columns() { return columns; }
 
 int get_rows() { return rows; }
-
-void swap(place* new_place, place* old_place, int new_pos[2], int old_pos[2]) {
-  board[old_pos[0]][old_pos[1]] = new_place;
-  set_character(new_place->type, new_place->id, old_pos);
-  board[new_pos[0]][new_pos[1]] = old_place;
-  set_character(old_place->type, old_place->id, new_pos);
-}
 
 void draw_swap(message m, place new_place, int old_pos[2]) {
   message other;

@@ -1,3 +1,10 @@
+/*
+ * file: server.c
+ * author: Vasco Candeias (vascocandeias@tecnico.ulisboa.pt)
+ * description: main server application to control the multiplayer pacman game
+ * date: 01-06-2020
+ */
+
 #include <SDL2/SDL.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -15,25 +22,27 @@
 #include "message.h"
 #include "players.h"
 
+// define FORCE_RENDERER to force board rendering in case some things are not
+// appearing right away
+
 // #define FORCE_RENDER
 #define FILENAME "board.txt"
 #define PORT 3000
 
 int fd;
 
-// Signal handling
-// TODO: close sockets and remove semaphores
+// Signal handling closes sockets and deletes semaphores
 void terminate(int signal) {
   printf("\nExiting due to signal\n");
-  close(fd);
   delete_fruits();
+  delete_players();
+  close(fd);
   close_board_windows();
   exit(0);
 }
 
 int main(int argc, char* argv[]) {
   SDL_Event event;
-  // this variable will contain the identifier for our own event type
   Uint32 Event_ShowUser;
   int done = 0;
   Event_ShowUser = SDL_RegisterEvents(1);
@@ -74,7 +83,6 @@ int main(int argc, char* argv[]) {
         done = SDL_TRUE;
       }
       if (event.type == Event_ShowUser) {
-        // we get the data (created with the malloc)
         message* data = event.user.data1;
 
         switch (data->type) {
@@ -106,10 +114,8 @@ int main(int argc, char* argv[]) {
       }
     }
   }
-  close(fd);
-  delete_players();
   delete_fruits();
-  delete_board();
+  delete_players();
+  close(fd);
   close_board_windows();
-  printf("end\n");
 }

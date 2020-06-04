@@ -1,3 +1,13 @@
+/*****************************************************************************
+ * File name: fruits.c
+ *
+ *  Author: Vasco Candeias (vascocandeias@tecnico.ulisboa.pt)
+ *
+ *  Release date: 01/06/2020
+ *
+ *  Description: Fruit module
+ *
+ ****************************************************************************/
 #include "fruits.h"
 
 #include <pthread.h>
@@ -29,7 +39,11 @@ static pthread_rwlock_t rwlock;
 fruit *create_fruit(character type, int *id) {
   fruit *f = (fruit *)malloc(sizeof(fruit));
 
-  f->type = type;
+  if (!f) {
+    perror("fruit allocation");
+    exit(-1);
+  }
+  f->type = type == LEMON || type == CHERRY ? type : CHERRY;
   f->stop = false;
 
   pthread_rwlock_wrlock(&rwlock);
@@ -61,7 +75,9 @@ void delete_fruits() {
   for (int i = 0; i < n_fruits; ++i) {
     fruits[i]->stop = true;
     sem_post(fruits[i]->semaphore);
+    fruits[i] = NULL;
   }
+  n_fruits = 0;
   free(fruits);
 }
 
@@ -108,6 +124,5 @@ void *thread_fruit(void *arg) {
   this->semaphore = NULL;
   sem_unlink(this->name);
   free(this);
-  printf("fruit deleted\n");
   return NULL;
 }

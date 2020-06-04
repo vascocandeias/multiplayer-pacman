@@ -22,14 +22,17 @@ int server;
 struct sockaddr_in local_addr;
 struct sockaddr_in remote_addr;
 socklen_t size_addr;
-int width = 50;
-int height = 20;
+int width;
+int height;
 
 // this variable will contain the identifier for our own event type
 Uint32 Event_ShowUser;
 
 void terminate(int signal) {
   printf("\nExiting due to signal\n");
+  close(remote_fd);
+  close(fd);
+  close_board_windows();
   exit(0);
 }
 
@@ -39,12 +42,21 @@ void* thread_user(void* arg) {
   SDL_Event new_event;
 
   while (read(remote_fd, &m, sizeof(m)) > 0) {
-    // printf("received: %d %d - %d %d %d\n", getpid(), m.id, m.type, m.x, m.y);
+    printf("received: %d %d - %d %d\n", m.id, m.type, m.x, m.y);
     if (m.score != -1) {
       if (m.score == 0) printf("\nScore Board\n");
-      printf("Player %d: %d\n", m.x, m.y);
+      if (m.score == 0 || m.score == 1) printf("Player %d: %d\n", m.x, m.y);
       continue;
     }
+
+    for (int i = 0; i < 3; ++i) {
+      if (m.color[i] > 255)
+        m.color[i] = 255;
+      else if (m.color[i] < 0)
+        m.color[i] = 0;
+    }
+
+    if (m.x < 0 || m.x >= width || m.y < 0 || m.y > height) continue;
 
     // create the data that will contain the new lemon position
     event_data = malloc(sizeof(message));
@@ -59,6 +71,12 @@ void* thread_user(void* arg) {
     // send the event
     SDL_PushEvent(&new_event);
   }
+  // clear the event data
+  SDL_zero(new_event);
+  // define event type
+  new_event.type = SDL_QUIT;
+  // send the event
+  SDL_PushEvent(&new_event);
   return NULL;
 }
 
@@ -109,10 +127,13 @@ int main(int argc, char* argv[]) {
     exit(-1);
   }
 
-  if (read(remote_fd, &m, sizeof(m)) <= 0) {
-    printf("Could not connect. Try again later\n");
-    exit(-1);
-  }
+  do {
+    if (read(remote_fd, &m, sizeof(m)) <= 0 || m.x <= 0 || m.y <= 0) {
+      printf("Could not connect. Try again later\n");
+      exit(-1);
+    }
+  } while (m.score != -2);  // ensures broadcast messages are ignored
+
   pthread_t thread_id;
   pthread_create(&thread_id, NULL, thread_user, NULL);
 
@@ -120,7 +141,7 @@ int main(int argc, char* argv[]) {
   height = m.y;
   id = m.id;
   printf("Player %d\n", id);
-  // creates a windows and a board with 50x20 cases
+  // creates a window and a board
   create_board_window(width, height);
 
   // monster and pacman position
@@ -143,7 +164,7 @@ int main(int argc, char* argv[]) {
       // when the mouse moves the pacman also moves
       if (event.type == SDL_MOUSEMOTION) {
         int x_new, y_new;
-        // this fucntion return the place where the mouse cursor is
+        // this function return the place where the mouse cursor is
         get_board_place(event.motion.x, event.motion.y, &x_new, &y_new);
         // if the mouse moved to another place
         if ((x_new != pacman[0]) || (y_new != pacman[1])) {
@@ -176,13 +197,10 @@ int main(int argc, char* argv[]) {
         }
         if (!m.x && !m.y) continue;
         if (remote_fd) write(remote_fd, &m, sizeof(m));
-        // printf("moving monster x-%d y-%d\n", m.x, m.y);
       }
       if (event.type == Event_ShowUser) {
         // we get the data (created with the malloc)
         message* data = event.user.data1;
-        // retrieve the x and y
-        // printf("move: %d -- %d %d\n", data->type, data->x, data->y);
         switch (data->type) {
           case CLEAR:
             clear_place(data->x, data->y);
@@ -190,17 +208,14 @@ int main(int argc, char* argv[]) {
           case POWER:
             paint_powerpacman(data->x, data->y, data->color[0], data->color[1],
                               data->color[2]);
-            // printf("paint powered pacman!\n");
             break;
           case PACMAN:
             paint_pacman(data->x, data->y, data->color[0], data->color[1],
                          data->color[2]);
-            // printf("paint pacman!\n");
             break;
           case MONSTER:
             paint_monster(data->x, data->y, data->color[0], data->color[1],
                           data->color[2]);
-            // printf("print monster!\n");
             break;
           case BRICK:
             paint_brick(data->x, data->y);
@@ -233,9 +248,7 @@ int main(int argc, char* argv[]) {
       }
     }
   }
-  close(fd);
   close(remote_fd);
-
-  printf("fim\n");
+  close(fd);
   close_board_windows();
 }
